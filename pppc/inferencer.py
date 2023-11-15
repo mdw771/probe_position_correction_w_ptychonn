@@ -1,15 +1,5 @@
-import pathlib
-
-import tensorrt
 import numpy as np
-import matplotlib.pyplot as plt
 import torch
-
-import torch
-import torchvision
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
 
 from pppc.helper import engine_build_from_onnx, mem_allocation, inference
 import pppc.configs
@@ -100,12 +90,6 @@ class ONNXTensorRTInferencer(Inferencer):
                                   self.trt_din, self.trt_dout, self.trt_stream))
 
         pred = pred.reshape([bsz, ny, nx])
-
-        fig, axes = plt.subplots(2, 4)
-        for i in range(8):
-            axes[i // 4][i % 4].imshow(pred[i])
-        plt.show()
-
         return pred
 
 

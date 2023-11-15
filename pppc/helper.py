@@ -62,7 +62,3 @@ def inference(context, h_input, h_output, d_input, d_output, stream):
     # Return the host
     return h_output
 
-## can change this later def pth2onnx(pth):
-
-#def pth2onnx(pth, bsz, in_size):
-
