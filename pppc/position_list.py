@@ -1,0 +1,53 @@
+import copy
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib
+
+from pppc.io import load_probe_positions_from_file
+
+class ProbePositionList:
+    def __init__(self, file_path=None, position_list=None, unit='pixel', psize_nm=None):
+        """
+        Probe position list.
+
+        :param file_path: str.
+        :param position_list: np.ndarray.
+        :param unit: str. Original unit of the data.
+        :param psize_nm: float. Real-space pixel size in nm.
+        """
+        if file_path is not None:
+            array = load_probe_positions_from_file(file_path)
+        else:
+            array = position_list
+        self.array = array
+        self.original_unit = unit
+        self.psize_nm = psize_nm
+        self.convert_position_unit_to_px()
+
+    def convert_position_unit_to_px(self):
+        """
+        Convert the unit of position values to pixel.
+        """
+        if self.original_unit == 'pixel':
+            return
+        factor = {'m': 1e9, 'cm': 1e7, 'mm': 1e6, 'um': 1e3, 'nm': 1}[self.original_unit]
+        self.array = self.array * factor / self.psize_nm
+
+    def __len__(self):
+        return len(self.array)
+
+    def shape(self):
+        return self.array.shape
+
+    def copy_with_zeros(self):
+        a = copy.deepcopy(self)
+        a.array = np.zeros_like(self.array)
+        return a
+
+    def plot(self):
+        cmap = matplotlib.cm.get_cmap('Spectral')
+        color_list = [matplotlib.colors.rgb2hex(cmap(x)) for x in np.linspace(0, 1, self.array.shape[0])]
+        plt.figure()
+        plt.scatter(self.array[:, 1], self.array[:, 0], c=color_list)
+        plt.show()

@@ -12,6 +12,8 @@ import numpy as np
 from skimage.transform import resize
 from numpy.fft import fftn, fftshift
 
+from pppc.util import class_timeit
+
 
 class PtychoNNModel(nn.Module):
     def __init__(self):
