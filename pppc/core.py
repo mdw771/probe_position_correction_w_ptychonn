@@ -3,6 +3,8 @@ import time
 
 import numpy as np
 import skimage.registration
+import skimage.feature
+import tifffile
 from tqdm import trange
 import matplotlib.pyplot as plt
 
@@ -11,6 +13,7 @@ from pppc.configs import InferenceConfig
 from pppc.reconstructor import PyTorchReconstructor
 from pppc.io import create_data_file_handle
 from pppc.position_list import ProbePositionList
+from pppc.registrator import Registrator
 from pppc.util import class_timeit
 
 
@@ -24,6 +27,7 @@ class PtychoNNProbePositionCorrector:
         self.new_probe_positions = None
         self.n_dps = 0
         self.debug = self.config_dict['debug']
+        self.registrator = None
 
     def build(self):
         self.ptycho_reconstructor.build()
@@ -40,6 +44,8 @@ class PtychoNNProbePositionCorrector:
             self.new_probe_positions = self.orig_probe_positions.copy_with_zeros()
         else:
             self.new_probe_positions = ProbePositionList(position_list=np.zeros([self.n_dps, 2]))
+
+        self.registrator = Registrator(method='error_map', max_shift=7)
 
     def run(self):
         self.run_probe_position_correction_serial()
@@ -69,7 +75,6 @@ class PtychoNNProbePositionCorrector:
             image_list[i] = new_image
         return image_list
 
-
     def run_probe_position_correction_serial(self):
         """
         Run serial mode probe position correction.
@@ -77,22 +82,19 @@ class PtychoNNProbePositionCorrector:
         previous_obj = self.reconstruct_dp(0)[1][0]
         for ind in trange(1, self.n_dps):
             current_obj = self.reconstruct_dp(ind)[1][0]
-            offset = self.run_registration(previous_obj, current_obj)
+            offset = self.registrator.run(previous_obj, current_obj)
             if self.debug:
                 fig, ax = plt.subplots(1, 2)
                 ax[0].imshow(previous_obj)
                 ax[1].imshow(current_obj)
                 plt.show()
                 print('Offset: {}'.format(offset))
-            self.update_probe_position_list(ind, offset)
+            self._update_probe_position_list(ind, offset)
             previous_obj = current_obj
         self.new_probe_positions.plot()
 
-    def run_registration(self, previous, current):
-        offset = skimage.registration.phase_cross_correlation(previous, current, upsample_factor=10)
-        return offset[0]
-
-    def update_probe_position_list(self, ind, offset):
+    def _update_probe_position_list(self, ind, offset):
         raw_ind = self.dp_data_fhdl.get_actual_indices_for_consecutive_index(ind, ravel=True)
         prev_raw_ind = self.dp_data_fhdl.get_actual_indices_for_consecutive_index(ind - 1, ravel=True)
         self.new_probe_positions.array[raw_ind] = self.new_probe_positions.array[prev_raw_ind] + offset
+

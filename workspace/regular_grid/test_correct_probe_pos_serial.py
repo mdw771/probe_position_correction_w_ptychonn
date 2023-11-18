@@ -30,7 +30,7 @@ if __name__ == '__main__':
     # config_dict['probe_position_data_path'] = 'data/data_w_pos_errors/pos221.csv'
     # config_dict['probe_position_data_unit'] = 'm'
     # config_dict['pixel_size_nm'] = 7.92485795
-    config_dict['central_crop'] = (32, 64)
+    # config_dict['central_crop'] = (48, 48)
     config_dict['debug'] = False
 
     corrector = PtychoNNProbePositionCorrector(config_dict)
