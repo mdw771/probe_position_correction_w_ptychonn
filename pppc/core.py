@@ -12,7 +12,7 @@ import sklearn.neighbors
 
 import pppc
 from pppc.configs import InferenceConfig
-from pppc.reconstructor import PyTorchReconstructor
+from pppc.reconstructor import PyTorchReconstructor, VirtualReconstructor
 from pppc.io import create_data_file_handle
 from pppc.position_list import ProbePositionList
 from pppc.registrator import Registrator
@@ -23,7 +23,10 @@ class PtychoNNProbePositionCorrector:
 
     def __init__(self, config_dict: InferenceConfig):
         self.config_dict = config_dict
-        self.ptycho_reconstructor = PyTorchReconstructor(self.config_dict)
+        if self.config_dict['ptycho_reconstructor'] is None:
+            self.ptycho_reconstructor = PyTorchReconstructor(self.config_dict)
+        else:
+            self.ptycho_reconstructor = self.config_dict['ptycho_reconstructor']
         self.dp_data_fhdl = None
         self.orig_probe_positions = None
         self.new_probe_positions = None
@@ -50,7 +53,7 @@ class PtychoNNProbePositionCorrector:
             self.orig_probe_positions = self.config_dict['probe_position_list']
         self.new_probe_positions = self.orig_probe_positions.copy_with_zeros()
 
-        self.registrator = Registrator(method='error_map', max_shift=7)
+        self.registrator = Registrator(method='error_map', max_shift=self.config_dict['max_shift'])
 
     def run(self):
         if self.method == 'serial':
@@ -61,9 +64,14 @@ class PtychoNNProbePositionCorrector:
             raise ValueError('Correction method {} is not supported. '.format(self.method))
 
     def reconstruct_dp(self, ind=None, dp=None):
-        if dp is None:
-            dp = self.dp_data_fhdl.get_dp_by_consecutive_index(ind)
-        obj_amp, obj_ph = self.ptycho_reconstructor.batch_infer(dp[np.newaxis, :, :])
+        if isinstance(self.ptycho_reconstructor, VirtualReconstructor):
+            assert ind is not None, 'Since the reconstructor is a VirtualReconstructor, a index must be provided. '
+            obj_amp, obj_ph = self.ptycho_reconstructor.batch_infer([ind])
+            dp = np.zeros(self.dp_data_fhdl.dp_shape)
+        else:
+            if dp is None:
+                dp = self.dp_data_fhdl.get_dp_by_consecutive_index(ind)
+            obj_amp, obj_ph = self.ptycho_reconstructor.batch_infer(dp[np.newaxis, :, :])
         if self.debug:
             fig, ax = plt.subplots(1, 3)
             ax[0].imshow(dp)
@@ -120,7 +128,8 @@ class PtychoNNProbePositionCorrector:
         nn_dists, nn_inds = nn_engine.kneighbors(self.orig_probe_positions.array)
         for i_dp, this_orig_pos in enumerate(tqdm(self.orig_probe_positions.array)):
             this_neighbors_inds = nn_inds[i_dp, 1:]
-            current_obj = self.reconstruct_dp(dp=self.dp_data_fhdl.get_dp_by_raw_index(i_dp))[1][0]
+            # `ind` is also provided in case the reconstructor is a `VirtualReconstructor`.
+            current_obj = self.reconstruct_dp(dp=self.dp_data_fhdl.get_dp_by_raw_index(i_dp), ind=i_dp)[1][0]
             for ind_neighbor in this_neighbors_inds:
                 # Check whether the current pair of DPs have already been registered.
                 if registered_pair_hash_table['{}_{}'.format(ind_neighbor, i_dp)] is not None or \
@@ -128,7 +137,8 @@ class PtychoNNProbePositionCorrector:
                     continue
                 # Otherwise, run registration and record the values.
                 registered_pair_hash_table['{}_{}'.format(ind_neighbor, i_dp)] = 1
-                neighbor_obj = self.reconstruct_dp(dp=self.dp_data_fhdl.get_dp_by_raw_index(ind_neighbor))[1][0]
+                neighbor_obj = self.reconstruct_dp(dp=self.dp_data_fhdl.get_dp_by_raw_index(ind_neighbor),
+                                                   ind=ind_neighbor)[1][0]
                 offset = self.registrator.run(neighbor_obj, current_obj)
                 b_vec.append(np.array(offset))
                 a_mat.append(self._generate_amat_row(i_dp, ind_neighbor))
