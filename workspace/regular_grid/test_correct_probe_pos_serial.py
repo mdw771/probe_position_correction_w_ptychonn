@@ -17,7 +17,7 @@ class RegularGridFileHandle(DataFileHandle):
         self.shape = self.array.shape
         self.num_dps = self.shape[0] * self.shape[1]
 
-    def get_dp_by_index(self, ind):
+    def get_dp_by_consecutive_index(self, ind):
         y, x = self.get_actual_indices_for_consecutive_index(ind)
         return self.array[y, x, :, :]
 

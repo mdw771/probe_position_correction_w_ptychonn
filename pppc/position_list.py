@@ -50,4 +50,5 @@ class ProbePositionList:
         color_list = [matplotlib.colors.rgb2hex(cmap(x)) for x in np.linspace(0, 1, self.array.shape[0])]
         plt.figure()
         plt.scatter(self.array[:, 1], self.array[:, 0], c=color_list)
+        plt.gca().invert_yaxis()
         plt.show()

@@ -14,7 +14,21 @@ class DataFileHandle:
         self.num_dps = None
         self.shape = None
 
-    def get_dp_by_index(self, ind):
+    def get_dp_by_raw_index(self, ind):
+        """
+        Takes in an index and return the corresponding DP. The index is assumed to be row-major for a 4D data array
+        with a 2D scan grid.
+
+        :param ind: int.
+        :return: np.ndarray.
+        """
+        if self.array.ndim == 3:
+            return self.array[ind]
+        else:
+            unraveled_inds = np.unravel_index(ind, self.array.shape[:2])
+            return self.array[unraveled_inds[0], unraveled_inds[1], :, :]
+
+    def get_dp_by_consecutive_index(self, ind):
         """
         Takes in an index and return the corresponding DP. The index is assumed to be consecutive, such that
         the DP with `ind` and `ind - 1` are guaranteed to be spatially connected. This means that for a 2D scan grid,
@@ -73,7 +87,7 @@ class NPZFileHandle(DataFileHandle):
         self.num_dps = self.array.shape[0]
         self.shape = self.array.shape
 
-    def get_dp_by_index(self, ind):
+    def get_dp_by_consecutive_index(self, ind):
         if hasattr(ind, '__len__'):
             return self.array[*ind, :, :]
         else:
