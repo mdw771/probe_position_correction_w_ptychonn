@@ -19,4 +19,5 @@ class InferenceConfig(collections.defaultdict):
         self['central_crop'] = None
         # Method for correction. Can be 'serial' or 'collective'
         self['method'] = 'collective'
+        self['max_shift'] = 7
         self['debug'] = None
