@@ -19,3 +19,4 @@ if __name__ == '__main__':
     corrector = PtychoNNProbePositionCorrector(config_dict)
     corrector.build()
     corrector.run()
+
