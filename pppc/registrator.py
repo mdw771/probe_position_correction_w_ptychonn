@@ -14,6 +14,14 @@ class Registrator:
         self.algorithm = self.algorithm_dict[method](max_shift=self.max_shift)
 
     def run(self, previous, current):
+        """
+        Run registration and get offset. The returned offset is the supposed *probe position difference* of the
+        current object relative to the previous one, which is opposite to the offset between the images.
+
+        :param previous: object image of the previous scan point.
+        :param current: object image of the current scan point.
+        :return: np.ndarray.
+        """
         offset = self.algorithm.run(previous, current)
         return offset
 
@@ -33,8 +41,9 @@ class PhaseCorrelationRegistrationAlgorithm(RegistrationAlgorithm):
     def run(self, previous, current, *args, **kwargs):
         previous -= np.mean(previous)
         current -= np.mean(current)
-        offset = skimage.registration.phase_cross_correlation(previous, current, upsample_factor=10)
+        offset = skimage.registration.phase_cross_correlation(current, previous, upsample_factor=10)
         offset = offset[0]
+        offset = -offset
         return offset
 
 
@@ -57,6 +66,8 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
                 i += 1
         result_table = np.stack(result_table)
         offset = self.__class__._fit_quadratic_peak_in_error_map(result_table)
+        # Probe position offset is opposite to image offset.
+        offset = -np.array(offset)
         return offset
 
     @staticmethod
@@ -119,5 +130,5 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         matched_points_prev = matched_points_prev[inlier_indices]
         matched_points_curr = matched_points_curr[inlier_indices]
         # Just calculate the averaged offset since we only want translation
-        offset = np.mean(matched_points_curr - matched_points_prev, axis=0)
+        offset = np.mean(matched_points_prev - matched_points_curr, axis=0)
         return offset
