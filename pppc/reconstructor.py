@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import torch
 
@@ -21,7 +23,26 @@ class Reconstructor:
 
     def batch_infer(self, x):
         pass
-        
+
+
+class VirtualReconstructor(Reconstructor):
+    def __init__(self, config_dict: pppc.configs.InferenceConfig):
+        super().__init__(config_dict)
+        self.object_image_array = None
+
+    def set_object_image_array(self, arr):
+        self.object_image_array = arr
+
+    def batch_infer(self, x):
+        """
+        Here x is supposed to be a list of indices for which the object images are to be retrieved.
+
+        :param x: list[int].
+        :return: np.ndarray.
+        """
+        a = np.take(self.object_image_array, indices=x, axis=0)
+        return a, a
+
 
 class PyTorchReconstructor(Reconstructor):
     def __init__(self, config_dict: pppc.configs.InferenceConfig):
@@ -30,9 +51,14 @@ class PyTorchReconstructor(Reconstructor):
 
     def build(self):
         self.model = PtychoNNModel()
-        self.model.load_state_dict(torch.load(self.config_dict['model_path']))
-        self.model.eval()
-        self.model = self.model.cuda()
+        try:
+            self.model.load_state_dict(torch.load(self.config_dict['model_path']))
+            self.model.eval()
+            self.model = self.model.cuda()
+        except:
+            warnings.warn('I was unable to locate the model. If this is desired (e.g., you want to override the '
+                          'reconstructor object with a virtual reconstructor later for simulation), ignore this '
+                          'message. Otherwise, check the path provided. ')
 
     def preprocess_data(self, x):
         assert isinstance(x, np.ndarray)

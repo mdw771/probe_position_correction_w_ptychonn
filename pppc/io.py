@@ -78,6 +78,21 @@ class DataFileHandle:
         self.shape = self.array.shape
 
 
+class VirtualDataFileHandle(DataFileHandle):
+
+    def __init__(self, file_path, dp_shape, num_dps):
+        super().__init__(file_path)
+        self.dp_shape = dp_shape
+        self.num_dps = num_dps
+        self.shape = [self.num_dps, *self.dp_shape]
+
+    def get_dp_by_consecutive_index(self, ind):
+        return np.zeros(self.dp_shape)
+
+    def get_dp_by_raw_index(self, ind):
+        return np.zeros(self.dp_shape)
+
+
 class NPZFileHandle(DataFileHandle):
 
     def __init__(self, file_path):

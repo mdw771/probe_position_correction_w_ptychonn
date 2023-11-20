@@ -45,10 +45,14 @@ class ProbePositionList:
         a.array = np.zeros_like(self.array)
         return a
 
-    def plot(self):
+    def plot(self, show=True, return_obj=False):
         cmap = matplotlib.cm.get_cmap('Spectral')
         color_list = [matplotlib.colors.rgb2hex(cmap(x)) for x in np.linspace(0, 1, self.array.shape[0])]
-        plt.figure()
-        plt.scatter(self.array[:, 1], self.array[:, 0], c=color_list)
+        fig, ax = plt.subplots(1, 1)
+        scat = plt.scatter(self.array[:, 1], self.array[:, 0], c=color_list, s=1, )
+        lines = plt.plot(self.array[:, 1], self.array[:, 0], linewidth=0.5, alpha=0.3, c='gray')
         plt.gca().invert_yaxis()
-        plt.show()
+        if show:
+            plt.show()
+        if return_obj:
+            return fig, ax, scat
