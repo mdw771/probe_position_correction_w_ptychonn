@@ -1,5 +1,6 @@
 import collections
 
+import torch
 
 class InferenceConfig(collections.defaultdict):
 
@@ -21,3 +22,26 @@ class InferenceConfig(collections.defaultdict):
         self['method'] = 'collective'
         self['max_shift'] = 7
         self['debug'] = None
+
+
+class TrainingConfigDict(collections.defaultdict):
+    def __init__(self):
+        super().__init__(lambda: None)
+        self['batch_size_per_process'] = 64
+        self['num_epochs'] = 60
+        self['learning_rate_per_process'] = 1e-3
+        self['optimizer'] = 'adam'  # String of optimizer name or the handle of a subclass of torch.optim.Optimizer
+        self['model_save_dir'] = '.'  # Directory to save trained models
+
+
+class PtychoNNTrainingConfigDict(TrainingConfigDict):
+    def __init__(self):
+        super().__init__()
+        self['height'] = 256
+        self['width'] = 256
+        self['num_lines_for_training'] = 100  # Number of lines used for training
+        self['num_lines_for_testing'] = 60  # Number of lines used for testing
+        self['num_lines_for_validation'] = 805  # Number of lines used for testing
+        self['dataset'] = None  # A torch.Dataset object
+        self['validation_ratio'] = 0.003  # Ratio of validation set out of the entire dataset
+
