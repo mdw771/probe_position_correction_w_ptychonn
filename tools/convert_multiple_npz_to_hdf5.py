@@ -71,12 +71,13 @@ class NPZ2HDF5Converter:
         self.f_h5.close()
 
     @staticmethod
-    def generate_file_list_from_dir(source_dir, exclude_list=()):
+    def generate_file_list_from_dir(source_dir, exclude_list=(), include_list=()):
         flist = glob.glob(os.path.join(source_dir, '*.npz'))
         final_flist = []
         for f in flist:
             if os.path.basename(f) not in exclude_list:
-                final_flist.append(f)
+                if len(include_list) > 0 and os.path.basename(f) in include_list:
+                    final_flist.append(f)
         return final_flist
 
 
@@ -85,18 +86,23 @@ if __name__ == '__main__':
     parser.add_argument('--filename', default=None)
     parser.add_argument('--source_dir', default=None)
     parser.add_argument('--exclude_list', default=None)
+    parser.add_argument('--include_list', default=None)
     parser.add_argument('--output_filename', default='data.h5')
     args = parser.parse_args()
 
     exclude_list = args.exclude_list
+    include_list = args.include_list
     if exclude_list is not None:
         exclude_list = exclude_list.split(',')
     else:
         exclude_list = ()
+    if include_list is not None:
+        include_list = include_list.split(',')
+    else:
+        include_list = ()
     if args.filename is not None:
         file_list = [args.filename]
     else:
-        file_list = NPZ2HDF5Converter.generate_file_list_from_dir(args.source_dir, exclude_list)
-    converter = NPZ2HDF5Converter(file_list, args.output_filename,
-                                  total_shape_dict={'real': [34596, 128, 128], 'reciprocal': [34596, 512, 512]})
+        file_list = NPZ2HDF5Converter.generate_file_list_from_dir(args.source_dir, exclude_list, include_list)
+    converter = NPZ2HDF5Converter(file_list, args.output_filename)
     converter.run()
