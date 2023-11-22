@@ -4,7 +4,7 @@ import torch
 
 class InferenceConfig(collections.defaultdict):
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         super().__init__(lambda: None)
         self['batch_size'] = 1
         # Path to a trained PtychoNN model.
@@ -25,18 +25,24 @@ class InferenceConfig(collections.defaultdict):
 
 
 class TrainingConfigDict(collections.defaultdict):
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         super().__init__(lambda: None)
         self['batch_size_per_process'] = 64
         self['num_epochs'] = 60
         self['learning_rate_per_process'] = 1e-3
         self['optimizer'] = 'adam'  # String of optimizer name or the handle of a subclass of torch.optim.Optimizer
         self['model_save_dir'] = '.'  # Directory to save trained models
+        # The model. The three options are:
+        # (1) None: the model will be instantiated with the default model class.
+        # (2) A object of nn.Module: the model object will be used as provided.
+        # (3) tuple(nn.Module, kwargs): the first element of the tuple is the class handle of a model class, and the
+        #     second is a dictionary of keyword arguments. The model will be instantiated using these.
+        self['model'] = None
 
 
 class PtychoNNTrainingConfigDict(TrainingConfigDict):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self['height'] = 256
         self['width'] = 256
         self['num_lines_for_training'] = 100  # Number of lines used for training
