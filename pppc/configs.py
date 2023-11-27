@@ -17,6 +17,8 @@ class InferenceConfigDict(collections.defaultdict):
         self['dp_data_file_path'] = None
         # Used as an alternative to `dp_data_file_path`. Should be a `DataFileHandle` object.
         self['dp_data_file_handle'] = None
+        # A ProbePositionList object. If None, `probe_position_data_path` must be provided.
+        self['probe_position_list'] = None
         self['probe_position_data_path'] = None
         self['probe_position_data_unit'] = None
         self['pixel_size_nm'] = None

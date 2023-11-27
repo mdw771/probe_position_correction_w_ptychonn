@@ -7,7 +7,8 @@ import matplotlib
 from pppc.io import load_probe_positions_from_file
 
 class ProbePositionList:
-    def __init__(self, file_path=None, position_list=None, unit='pixel', psize_nm=None):
+    def __init__(self, file_path=None, position_list=None, unit='pixel', psize_nm=None, convert_to_pixel=True,
+                 first_is_x=False):
         """
         Probe position list.
 
@@ -17,13 +18,14 @@ class ProbePositionList:
         :param psize_nm: float. Real-space pixel size in nm.
         """
         if file_path is not None:
-            array = load_probe_positions_from_file(file_path)
+            array = load_probe_positions_from_file(file_path, first_is_x=first_is_x)
         else:
             array = position_list
         self.array = array
         self.original_unit = unit
         self.psize_nm = psize_nm
-        self.convert_position_unit_to_px()
+        if convert_to_pixel:
+            self.convert_position_unit_to_px()
 
     def convert_position_unit_to_px(self):
         """

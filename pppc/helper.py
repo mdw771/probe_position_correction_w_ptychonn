@@ -77,3 +77,13 @@ def transform_data_for_ptychonn(dp, target_shape):
     target_shape = list(dp.shape[:-2]) + list(target_shape)
     dp = resize(dp, target_shape, preserve_range=True, anti_aliasing=True)
     return dp
+
+
+def crop_center(img, shape_to_keep=(64, 64)):
+    slicer = [slice(None)] * (len(img.shape) - 2)
+    for i in range(-2, 0, -1):
+        st = (img.shape[i] - shape_to_keep[i]) // 2
+        end = st + shape_to_keep[i]
+        slicer.append(slice(st, end))
+    img = img[*slicer]
+    return img

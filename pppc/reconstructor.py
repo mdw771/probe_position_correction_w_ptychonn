@@ -1,14 +1,20 @@
 import os.path
 import warnings
+from math import *
+import glob
 
 import numpy as np
 import torch
 import tifffile
 import tqdm
+from scipy import interpolate
+import matplotlib
+import matplotlib.pyplot as plt
 
-from pppc.helper import engine_build_from_onnx, mem_allocation, inference
+from pppc.helper import engine_build_from_onnx, mem_allocation, inference, crop_center
 import pppc.configs
 from pppc.ptychonn.model import PtychoNNModel
+from pppc.position_list import ProbePositionList
 from pppc.util import class_timeit
 from pppc.io import *
 
@@ -157,7 +163,7 @@ class DatasetInferencer:
         self.reconstructor.build()
 
     def run(self):
-        pbar = tqdm.tqdm(total=self.dp_data_file_handle.num_dps)
+        pbar = tqdm.tqdm(total=self.dp_data_file_handle.num_dps, position=0, leave=True)
         i_start = 0
         i_end = min(i_start + self.inference_batch_size, self.dp_data_file_handle.num_dps)
         while i_start < self.dp_data_file_handle.num_dps:
@@ -184,3 +190,91 @@ class DatasetInferencer:
                 tifffile.imwrite(os.path.join(self.config_dict['prediction_output_path'],
                                               '{}_{}.tiff'.format(name_prefix, ind)),
                                  arr[i])
+
+
+class TileStitcher:
+
+    def __init__(self, config_dict: pppc.configs.InferenceConfigDict):
+        self.config_dict = config_dict
+        self.images = None
+        self.image_stitched = None
+        self.position_list = None
+        self.flip_lr = False
+        self.name_prefix = 'pred_ph'
+
+    def build(self):
+        self.build_position_list()
+        self.build_image_array()
+
+    def build_position_list(self):
+        if self.config_dict['probe_position_list'] is not None:
+            self.position_list = self.config_dict['probe_position_list']
+        else:
+            self.position_list = ProbePositionList(file_path=self.config_dict['probe_position_data_path'],
+                                                   unit=self.config_dict['probe_position_data_unit'],
+                                                   psize_nm=self.config_dict['pixel_size_nm'],
+                                                   convert_to_pixel=False)
+
+    def build_image_array(self):
+        if len(self.config_dict['prediction_output_path']) > 5 and \
+                self.config_dict['prediction_output_path'][-5:] == '.tiff':
+            self.images = tifffile.imread(self.config_dict['prediction_output_path'])
+        else:
+            flist = glob.glob(os.path.join(self.config_dict['prediction_output_path'], '{}*'.format(self.name_prefix)))
+            n = len(flist)
+            self.images = []
+            prefix = self.find_true_prefix([os.path.basename(x) for x in flist[:2]])
+            for i in range(n):
+                img = tifffile.imread(
+                    os.path.join(self.config_dict['prediction_output_path'], '{}{}.tiff'.format(prefix, i)))
+                self.images.append(img)
+            self.images = np.stack(self.images)
+        if self.config_dict['central_crop'] is not None:
+            self.images = crop_center(self.images, self.config_dict['central_crop'])
+    def run(self):
+        """
+        By Tao Zhou.
+        """
+        pos = self.position_list.array
+        data = self.images
+        psize_m = self.position_list.psize_nm * 1e-9
+        pos_x = pos[:, 1] * -1
+        pos_y = pos[:, 0] * -1
+        x = np.arange(pos_x.min() - 0.5e-6, pos_x.max() + 0.5e-6, psize_m)
+        y = np.arange(pos_y.min() - 0.5e-6, pos_y.max() + 0.5e-6, psize_m)
+
+        self.image_stitched = np.zeros((y.shape[0], x.shape[0]))
+        cnt = np.copy(self.image_stitched)
+        cnt1 = cnt + 1
+
+        xx = np.arange(self.images.shape[2]) * psize_m
+        xx -= xx.mean()
+        yy = np.arange(self.images.shape[1]) * psize_m
+        yy -= yy.mean()
+
+        for i in tqdm.trange(data.shape[0], position=0, leave=True):
+            xxx = xx - pos_x[i]
+            yyy = yy - pos_y[i]
+            img = np.fliplr(data[i, :, :]) if self.flip_lr else data[i, :, :]
+            find_pha = interpolate.interp2d(xxx[:], yyy[:], img, kind='linear', fill_value=0)
+            # find_pha = interpolate.RegularGridInterpolator((yyy[:],xxx[:]),data[i,:,:],\
+            #                                               method='linear', fill_value=0, bounds_error=False)
+            # crop out 40 pixels on each end, you can try 32, 16...
+            tmp = find_pha(x, y)
+            cnt += tmp != 0
+            self.image_stitched += tmp
+        self.image_stitched = (self.image_stitched / np.maximum(cnt, cnt1))[:, ::-1]
+
+    def find_true_prefix(self, name_list):
+        s = ''
+        for i in range(len(name_list[0])):
+            flag = True
+            for fname in name_list:
+                if s + name_list[0][i] not in fname:
+                    flag = False
+                    break
+            if flag:
+                s = s + name_list[0][i]
+            else:
+                break
+        return s

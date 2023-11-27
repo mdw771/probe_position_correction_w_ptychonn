@@ -135,17 +135,20 @@ def create_data_file_handle(file_path) -> DataFileHandle:
         return NPZFileHandle(file_path)
 
 
-def load_probe_positions_from_file(file_path):
+def load_probe_positions_from_file(file_path, first_is_x=True):
     """
     Load probe positions from file.
 
     :param file_path: str.
+    :param first_is_x: bool. If True, the first value of each coordinates is assumed to be x, and the output array
+                             is flipped to return coordinates in (y, x).
     :return: np.ndarray. The returned shape is [n, 2], with each subarray storing a position in (y, x).
     """
     fmt = os.path.splitext(file_path)[-1]
     if fmt == '.csv':
-        probe_pos = pd.read_csv(file_path, header=None)
-        probe_pos = probe_pos.to_numpy()[:, ::-1]
+        probe_pos = pd.read_csv(file_path, header=None).to_numpy()
     else:
         raise ValueError('Unsupported format "{}".'.format(fmt))
+    if first_is_x:
+        probe_pos = probe_pos[:, ::-1]
     return probe_pos
