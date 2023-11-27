@@ -5,6 +5,8 @@ from torch.utils.data import Dataset
 import numpy as np
 from skimage.transform import resize
 
+from pppc.helper import transform_data_for_ptychonn
+
 
 class HDF5Dataset(Dataset):
     def __init__(self, filename, verbose=False):
@@ -54,12 +56,7 @@ class HDF5Dataset(Dataset):
         return dp, real_mag, real_phase
 
     def resize_dp(self, dp, target_shape):
-        # Throw away 1/8 of the boundary region, and resize DPs to match label size.
-        discard_len = [dp.shape[i] // 8 for i in (-2, -1)]
-        dp = dp[tuple([slice(None)] * (len(dp.shape) - 2) + [slice(discard_len[i], -discard_len[i]) for i in (0, 1)])]
-        target_shape = list(dp.shape[:-2]) + list(target_shape)
-        dp = resize(dp, target_shape, preserve_range=True, anti_aliasing=True)
-        return dp
+        return transform_data_for_ptychonn(dp, target_shape)
 
     def check_dataset(self):
         required_keys = ['data/real', 'data/reciprocal']

@@ -1,5 +1,6 @@
 import pycuda.driver as cuda
 import tensorrt as trt
+from skimage.transform import resize
 
 from pppc.message_logger import logger
 
@@ -62,3 +63,17 @@ def inference(context, h_input, h_output, d_input, d_output, stream):
     # Return the host
     return h_output
 
+
+def transform_data_for_ptychonn(dp, target_shape):
+    """
+    Throw away 1/8 of the boundary region, and resize DPs to match label size.
+
+    :param dp: np.ndarray. The data to be transformed. Can be either 3D [N, H, W] or 2D [H, W].
+    :param target_shape: list[int]. The target shape.
+    :return: np.ndarray.
+    """
+    discard_len = [dp.shape[i] // 8 for i in (-2, -1)]
+    dp = dp[tuple([slice(None)] * (len(dp.shape) - 2) + [slice(discard_len[i], -discard_len[i]) for i in (0, 1)])]
+    target_shape = list(dp.shape[:-2]) + list(target_shape)
+    dp = resize(dp, target_shape, preserve_range=True, anti_aliasing=True)
+    return dp

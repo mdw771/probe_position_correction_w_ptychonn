@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import sklearn.neighbors
 
 import pppc
-from pppc.configs import InferenceConfig
+from pppc.configs import InferenceConfigDict
 from pppc.reconstructor import PyTorchReconstructor, VirtualReconstructor
 from pppc.io import create_data_file_handle
 from pppc.position_list import ProbePositionList
@@ -21,7 +21,7 @@ from pppc.util import class_timeit
 
 class PtychoNNProbePositionCorrector:
 
-    def __init__(self, config_dict: InferenceConfig):
+    def __init__(self, config_dict: InferenceConfigDict):
         self.config_dict = config_dict
         if self.config_dict['ptycho_reconstructor'] is None:
             self.ptycho_reconstructor = PyTorchReconstructor(self.config_dict)

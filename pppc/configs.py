@@ -2,13 +2,18 @@ import collections
 
 import torch
 
-class InferenceConfig(collections.defaultdict):
+class InferenceConfigDict(collections.defaultdict):
 
     def __init__(self, *args, **kwargs):
         super().__init__(lambda: None)
         self['batch_size'] = 1
         # Path to a trained PtychoNN model.
         self['model_path'] = None
+        # The model. Should be a tuple(nn.Module, kwargs): the first element of the tuple is the class handle of a
+        # model class, and the second is a dictionary of keyword arguments. The model will be instantiated using these.
+        # This value is used to instantiate a model object, whose weights are overwritten with those read from
+        # `model_path`. The provided model class and arguments must match the model being loaded.
+        self['model'] = None
         self['dp_data_file_path'] = None
         # Used as an alternative to `dp_data_file_path`. Should be a `DataFileHandle` object.
         self['dp_data_file_handle'] = None
@@ -18,9 +23,12 @@ class InferenceConfig(collections.defaultdict):
         # Patch size used for image registration. If smaller than the reconstructed object size, a patch will
         # be cropped from the center.
         self['central_crop'] = None
+        # Path to save PtychoNN prediction results.
+        self['prediction_output_path'] = None
         # Method for correction. Can be 'serial' or 'collective'
         self['method'] = 'collective'
         self['max_shift'] = 7
+        self['cpu_only'] = False
         self['debug'] = None
 
 
@@ -50,4 +58,3 @@ class PtychoNNTrainingConfigDict(TrainingConfigDict):
         self['num_lines_for_validation'] = 805  # Number of lines used for testing
         self['dataset'] = None  # A torch.Dataset object
         self['validation_ratio'] = 0.003  # Ratio of validation set out of the entire dataset
-

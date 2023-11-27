@@ -9,7 +9,7 @@ from pppc.message_logger import logger
 
 
 if __name__ == '__main__':
-    config = pppc.configs.InferenceConfig()
+    config = pppc.configs.InferenceConfigDict()
     config['model_path'] = '../../trained_models/ptychoNN_CNN_encoder_decoder_pytorch_statedict.pth'
     data = np.load('data/20191008_39_diff_sample.npy')
     data = data.reshape([data.shape[0] * data.shape[1], *data.shape[2:]])

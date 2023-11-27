@@ -2,8 +2,10 @@ import os
 
 import numpy as np
 import pandas as pd
+from skimage.transform import resize
 
 from pppc.util import class_timeit
+from pppc.helper import transform_data_for_ptychonn
 
 class DataFileHandle:
 
@@ -76,6 +78,18 @@ class DataFileHandle:
         else:
             self.num_dps = self.array.shape[0]
         self.shape = self.array.shape
+
+    def transform_data(self, target_shape=(128, 128)):
+        batch_size = 32
+        new_arr = np.zeros([self.num_dps, *target_shape])
+        i_start = 0
+        i_end = min(i_start + batch_size, self.num_dps)
+        while i_start < self.num_dps:
+            data_transformed = transform_data_for_ptychonn(self.array[i_start:i_end], target_shape)
+            new_arr[i_start:i_end] = data_transformed
+            i_start = i_end
+            i_end = min(i_start + batch_size, self.num_dps)
+        self.array = new_arr
 
 
 class VirtualDataFileHandle(DataFileHandle):

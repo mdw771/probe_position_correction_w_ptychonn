@@ -4,7 +4,7 @@ sys.path.insert(0, '/data/programs/probe_position_correction_w_ptychonn/pppc')
 import numpy as np
 
 import pppc
-from pppc.configs import InferenceConfig
+from pppc.configs import InferenceConfigDict
 from pppc.core import PtychoNNProbePositionCorrector
 from pppc.io import DataFileHandle
 from pppc.util import class_timeit
@@ -23,7 +23,7 @@ class RegularGridFileHandle(DataFileHandle):
 
 
 if __name__ == '__main__':
-    config_dict = InferenceConfig()
+    config_dict = InferenceConfigDict()
     config_dict['model_path'] = '../../trained_models/ptychoNN_CNN_encoder_decoder_pytorch_statedict.pth'
     config_dict['dp_data_file_handle'] = RegularGridFileHandle('data/20191008_39_diff_reduced.npz')
     config_dict['dp_data_file_handle'].slice_array((slice(0, 20), slice(0, 20)))

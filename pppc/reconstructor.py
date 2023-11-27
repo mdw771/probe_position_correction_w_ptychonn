@@ -1,32 +1,40 @@
+import os.path
 import warnings
 
 import numpy as np
 import torch
+import tifffile
+import tqdm
 
 from pppc.helper import engine_build_from_onnx, mem_allocation, inference
 import pppc.configs
 from pppc.ptychonn.model import PtychoNNModel
 from pppc.util import class_timeit
+from pppc.io import *
 
 
 class Reconstructor:
-    def __init__(self, config_dict: pppc.configs.InferenceConfig):
+    def __init__(self, config_dict: pppc.configs.InferenceConfigDict):
         """
         Inference engine for PtychoNN.
 
         :param config_dict: dict. Configuration dictionary.
         """
         self.config_dict = config_dict
+        self.device = None
 
     def build(self):
-        pass
+        if self.config_dict['cpu_only'] or (not torch.cuda.is_available()):
+            self.device = torch.device('cpu')
+        else:
+            self.device = torch.device('cuda')
 
     def batch_infer(self, x):
         pass
 
 
 class VirtualReconstructor(Reconstructor):
-    def __init__(self, config_dict: pppc.configs.InferenceConfig):
+    def __init__(self, config_dict: pppc.configs.InferenceConfigDict):
         super().__init__(config_dict)
         self.object_image_array = None
 
@@ -45,16 +53,24 @@ class VirtualReconstructor(Reconstructor):
 
 
 class PyTorchReconstructor(Reconstructor):
-    def __init__(self, config_dict: pppc.configs.InferenceConfig):
+    def __init__(self, config_dict: pppc.configs.InferenceConfigDict):
         super().__init__(config_dict)
         self.model = None
 
     def build(self):
-        self.model = PtychoNNModel()
+        super().build()
+        self.build_model()
+
+    def build_model(self):
+        if self.config_dict['model'] is None:
+            self.model = PtychoNNModel()
+        else:
+            self.model = self.config_dict['model'][0](**self.config_dict['model'][1])
         try:
             self.model.load_state_dict(torch.load(self.config_dict['model_path']))
             self.model.eval()
-            self.model = self.model.cuda()
+            if not self.config_dict['cpu_only']:
+                self.model = self.model.cuda()
         except:
             warnings.warn('I was unable to locate the model. If this is desired (e.g., you want to override the '
                           'reconstructor object with a virtual reconstructor later for simulation), ignore this '
@@ -64,7 +80,7 @@ class PyTorchReconstructor(Reconstructor):
         assert isinstance(x, np.ndarray)
         x = x.astype(np.float32)
         x = x[:, np.newaxis, :, :]
-        x = torch.tensor(x, requires_grad=False, device='cuda')
+        x = torch.tensor(x, requires_grad=False, device=self.device)
         return x
 
     def batch_infer(self, x):
@@ -82,7 +98,7 @@ class PyTorchReconstructor(Reconstructor):
 
 
 class ONNXTensorRTReconstructor(Reconstructor):
-    def __init__(self, config_dict: pppc.configs.InferenceConfig):
+    def __init__(self, config_dict: pppc.configs.InferenceConfigDict):
         """
         Inference engine for PtychoNN.
 
@@ -126,3 +142,45 @@ class ONNXTensorRTReconstructor(Reconstructor):
 
         pred = pred.reshape([bsz, ny, nx])
         return pred
+
+
+class DatasetInferencer:
+    def __init__(self, inference_dict: pppc.configs.InferenceConfigDict):
+        self.config_dict = inference_dict
+        self.dp_data_file_handle = None
+        self.inference_batch_size = self.config_dict['batch_size']
+        self.reconstructor = None
+
+    def build(self):
+        self.dp_data_file_handle = self.config_dict['dp_data_file_handle']
+        self.reconstructor = PyTorchReconstructor(self.config_dict)
+        self.reconstructor.build()
+
+    def run(self):
+        pbar = tqdm.tqdm(total=self.dp_data_file_handle.num_dps)
+        i_start = 0
+        i_end = min(i_start + self.inference_batch_size, self.dp_data_file_handle.num_dps)
+        while i_start < self.dp_data_file_handle.num_dps:
+            # TODO: make this compatible with 4D data array by creating a get indices method in data file handle.
+            data_arr = self.dp_data_file_handle.array[i_start:i_end]
+            pred_amp, pred_ph = self.reconstructor.batch_infer(data_arr)
+            self.write_tiffs(pred_ph, start_index=i_start, name_prefix='pred_phase')
+            self.write_tiffs(pred_amp, start_index=i_start, name_prefix='pred_amp')
+            i_start = i_end
+            i_end = min(i_start + self.inference_batch_size, self.dp_data_file_handle.num_dps)
+            pbar.update(i_end - i_start)
+        pbar.close()
+
+    def write_tiffs(self, arr, start_index=0, name_prefix='pred_phase'):
+        if not os.path.exists(self.config_dict['prediction_output_path']):
+            os.makedirs(self.config_dict['prediction_output_path'])
+        if arr.ndim == 2:
+            tifffile.imwrite(os.path.join(self.config_dict['prediction_output_path'],
+                                          '{}_{}.tiff'.format(name_prefix, start_index)),
+                             arr)
+        else:
+            for i in range(arr.shape[0]):
+                ind = start_index + i
+                tifffile.imwrite(os.path.join(self.config_dict['prediction_output_path'],
+                                              '{}_{}.tiff'.format(name_prefix, ind)),
+                                 arr[i])

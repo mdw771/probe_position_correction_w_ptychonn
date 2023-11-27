@@ -9,7 +9,7 @@ from pppc.message_logger import logger
 
 
 if __name__ == '__main__':
-    config = pppc.configs.InferenceConfig()
+    config = pppc.configs.InferenceConfigDict()
     config['onnx_mdl'] = '../../trained_models/ptychoNN_8.onnx'
 
     data = np.load('data/20191008_39_diff_sample.npy')
