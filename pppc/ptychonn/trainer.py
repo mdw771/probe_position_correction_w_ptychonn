@@ -260,6 +260,9 @@ class PtychoNNTrainer:
 
     def plot_loss_history(self):
         losses_arr = np.array(self.metric_dict['losses'])
+        if (len(losses_arr) == 0):
+            print('Unable to plot: loss array is empty.')
+            return
         val_losses_arr = np.array(self.metric_dict['val_losses'])
         fig, ax = plt.subplots(3, sharex=True, figsize=(15, 8))
         ax[0].plot(losses_arr[:, 0], 'C3o-', label="Total Train loss")
@@ -469,7 +472,7 @@ class PtychoNNHyperparameterScanner:
         # Reinitialize with a brand new model object
         assert isinstance(trainer.config_dict['model'], (tuple, list)), \
             '`config_dict["model"]` should be a tuple of class handle and kwargs.'
-        trainer.build()
+        trainer.build_model()
         trainer.config_dict['model_path'] = os.path.join(trainer.config_dict['model_save_dir'], 'best_model.pth')
         trainer.load_checkpoint()
 
