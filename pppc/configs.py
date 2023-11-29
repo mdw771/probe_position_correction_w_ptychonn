@@ -42,6 +42,7 @@ class InferenceConfigDict(ConfigDict):
 
     def __init__(self, *args, **kwargs):
         super().__init__()
+        # ===== PtychoNN configs =====
         self['batch_size'] = 1
         # Path to a trained PtychoNN model.
         self['model_path'] = None
@@ -50,6 +51,11 @@ class InferenceConfigDict(ConfigDict):
         # This value is used to instantiate a model object, whose weights are overwritten with those read from
         # `model_path`. The provided model class and arguments must match the model being loaded.
         self['model'] = None
+        # Path to save PtychoNN prediction results.
+        self['prediction_output_path'] = None
+        self['cpu_only'] = False
+
+        # ===== General configs =====
         self['dp_data_file_path'] = None
         # Used as an alternative to `dp_data_file_path`. Should be a `DataFileHandle` object.
         self['dp_data_file_handle'] = None
@@ -61,12 +67,12 @@ class InferenceConfigDict(ConfigDict):
         # Patch size used for image registration. If smaller than the reconstructed object size, a patch will
         # be cropped from the center.
         self['central_crop'] = None
-        # Path to save PtychoNN prediction results.
-        self['prediction_output_path'] = None
         # Method for correction. Can be 'serial' or 'collective'
         self['method'] = 'collective'
         self['max_shift'] = 7
-        self['cpu_only'] = False
+        self['registration_method'] = 'error_map'
+        # Number of neighbors in collective registration
+        self['num_neighbors_collective'] = 3
         self['debug'] = None
 
 

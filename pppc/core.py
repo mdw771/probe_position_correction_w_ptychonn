@@ -53,7 +53,8 @@ class PtychoNNProbePositionCorrector:
             self.orig_probe_positions = self.config_dict['probe_position_list']
         self.new_probe_positions = self.orig_probe_positions.copy_with_zeros()
 
-        self.registrator = Registrator(method='error_map', max_shift=self.config_dict['max_shift'])
+        self.registrator = Registrator(method=self.config_dict['registration_method'],
+                                       max_shift=self.config_dict['max_shift'])
 
     def run(self):
         if self.method == 'serial':
@@ -75,8 +76,11 @@ class PtychoNNProbePositionCorrector:
         if self.debug:
             fig, ax = plt.subplots(1, 3)
             ax[0].imshow(dp)
+            ax[0].set_title('DP')
             ax[1].imshow(obj_ph[0])
+            ax[1].set_title('Recon phase')
             ax[2].imshow(obj_amp[0])
+            ax[2].set_title('Recon mag')
             plt.show()
         obj_amp, obj_ph = self.crop_center([obj_amp, obj_ph])
         return obj_amp, obj_ph
@@ -99,9 +103,12 @@ class PtychoNNProbePositionCorrector:
         Run serial mode probe position correction.
         """
         previous_obj = self.reconstruct_dp(0)[1][0]
+        previous_offset = [0, 0]
         for ind in trange(1, self.n_dps):
             current_obj = self.reconstruct_dp(ind)[1][0]
             offset = self.registrator.run(previous_obj, current_obj)
+            if self.registrator.get_status() == self.registrator.get_status_code('drift'):
+                offset = previous_offset
             if self.debug:
                 fig, ax = plt.subplots(1, 2)
                 ax[0].imshow(previous_obj)
@@ -112,6 +119,7 @@ class PtychoNNProbePositionCorrector:
                 print('Offset: {}'.format(offset))
             self._update_probe_position_list(ind, offset)
             previous_obj = current_obj
+            previous_offset = offset
         self.new_probe_positions.plot()
 
     def run_probe_position_correction_collective(self):
@@ -123,7 +131,7 @@ class PtychoNNProbePositionCorrector:
         # A hash table used to keep track of already registered DP pairs. One can then check whether a pair has been
         # registered with O(1) time.
         registered_pair_hash_table = collections.defaultdict(lambda: None)
-        nn_engine = sklearn.neighbors.NearestNeighbors(n_neighbors=4)
+        nn_engine = sklearn.neighbors.NearestNeighbors(n_neighbors=self.config_dict['num_neighbors_collective'] + 1)
         nn_engine.fit(self.orig_probe_positions.array)
         nn_dists, nn_inds = nn_engine.kneighbors(self.orig_probe_positions.array)
         for i_dp, this_orig_pos in enumerate(tqdm(self.orig_probe_positions.array)):
@@ -140,8 +148,19 @@ class PtychoNNProbePositionCorrector:
                 neighbor_obj = self.reconstruct_dp(dp=self.dp_data_fhdl.get_dp_by_raw_index(ind_neighbor),
                                                    ind=ind_neighbor)[1][0]
                 offset = self.registrator.run(neighbor_obj, current_obj)
-                b_vec.append(np.array(offset))
-                a_mat.append(self._generate_amat_row(i_dp, ind_neighbor))
+                if self.debug:
+                    fig, ax = plt.subplots(1, 2)
+                    ax[0].imshow(neighbor_obj)
+                    ax[1].imshow(current_obj)
+                    plt.suptitle('Index {} - {}'.format(i_dp, ind_neighbor))
+                    plt.show()
+                    plt.tight_layout()
+                    print('Offset: {}'.format(offset))
+                if self.registrator.get_status() == self.registrator.get_status_code('drift'):
+                    continue
+                else:
+                    b_vec.append(np.array(offset))
+                    a_mat.append(self._generate_amat_row(i_dp, ind_neighbor))
         a_mat = np.stack(a_mat)
         b_vec = np.stack(b_vec)
         self.new_probe_positions.array = np.linalg.pinv(a_mat) @ b_vec
