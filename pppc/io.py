@@ -79,13 +79,16 @@ class DataFileHandle:
             self.num_dps = self.array.shape[0]
         self.shape = self.array.shape
 
-    def transform_data(self, target_shape=(128, 128)):
+    def transform_data(self, target_shape=(128, 128), discard_len=None):
         batch_size = 32
         new_arr = np.zeros([self.num_dps, *target_shape])
         i_start = 0
         i_end = min(i_start + batch_size, self.num_dps)
         while i_start < self.num_dps:
-            data_transformed = transform_data_for_ptychonn(self.array[i_start:i_end], target_shape)
+            data_transformed = transform_data_for_ptychonn(self.array[i_start:i_end], target_shape,
+                                                           discard_len=discard_len)
+            # Zero small elements
+            data_transformed = np.where(data_transformed < 3, 0, data_transformed)
             new_arr[i_start:i_end] = data_transformed
             i_start = i_end
             i_end = min(i_start + batch_size, self.num_dps)

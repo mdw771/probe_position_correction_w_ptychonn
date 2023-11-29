@@ -231,6 +231,7 @@ class TileStitcher:
             self.images = np.stack(self.images)
         if self.config_dict['central_crop'] is not None:
             self.images = crop_center(self.images, self.config_dict['central_crop'])
+
     def run(self):
         """
         By Tao Zhou.

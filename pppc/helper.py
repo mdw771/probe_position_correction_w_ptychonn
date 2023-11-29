@@ -1,6 +1,7 @@
 import pycuda.driver as cuda
 import tensorrt as trt
 from skimage.transform import resize
+import numpy as np
 
 from pppc.message_logger import logger
 
@@ -64,24 +65,39 @@ def inference(context, h_input, h_output, d_input, d_output, stream):
     return h_output
 
 
-def transform_data_for_ptychonn(dp, target_shape):
+def transform_data_for_ptychonn(dp, target_shape, discard_len=None):
     """
     Throw away 1/8 of the boundary region, and resize DPs to match label size.
 
     :param dp: np.ndarray. The data to be transformed. Can be either 3D [N, H, W] or 2D [H, W].
     :param target_shape: list[int]. The target shape.
+    :param discard_len: tuple[int]. The length to discard on each side. If None, the length is default to 1/8 of the raw
+                                    image size. If the numbers are negative, the images will be padded instead.
     :return: np.ndarray.
     """
-    discard_len = [dp.shape[i] // 8 for i in (-2, -1)]
-    dp = dp[tuple([slice(None)] * (len(dp.shape) - 2) + [slice(discard_len[i], -discard_len[i]) for i in (0, 1)])]
+    dp = dp.astype(float)
+    if discard_len is None:
+        discard_len = [dp.shape[i] // 8 for i in (-2, -1)]
+    for i in (0, 1):
+        if discard_len[i] > 0:
+            slicer = [slice(None)] * (len(dp.shape) - 2)
+            slicer_appendix = [slice(None), slice(None)]
+            slicer_appendix[i] = slice(discard_len[i], -discard_len[i])
+            dp = dp[tuple(slicer + slicer_appendix)]
+        elif discard_len[i] < 0:
+            pad_len = [(0, 0)] * (len(dp.shape) - 2)
+            pad_len_appendix = [(0, 0), (0, 0)]
+            pad_len_appendix[i] = (-discard_len[i], -discard_len[i])
+            dp = np.pad(dp, np.array(pad_len + pad_len_appendix), mode='constant')
     target_shape = list(dp.shape[:-2]) + list(target_shape)
-    dp = resize(dp, target_shape, preserve_range=True, anti_aliasing=True)
+    if not (target_shape[-1] == dp.shape[-1] and target_shape[-2] == dp.shape[-2]):
+        dp = resize(dp, target_shape, preserve_range=True, anti_aliasing=True)
     return dp
 
 
 def crop_center(img, shape_to_keep=(64, 64)):
     slicer = [slice(None)] * (len(img.shape) - 2)
-    for i in range(-2, 0, -1):
+    for i in range(-2, 0, 1):
         st = (img.shape[i] - shape_to_keep[i]) // 2
         end = st + shape_to_keep[i]
         slicer.append(slice(st, end))

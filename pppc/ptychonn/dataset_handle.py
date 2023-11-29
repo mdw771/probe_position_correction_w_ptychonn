@@ -9,11 +9,18 @@ from pppc.helper import transform_data_for_ptychonn
 
 
 class HDF5Dataset(Dataset):
-    def __init__(self, filename, verbose=False):
+    def __init__(self, filename, transform_func=None, transform_func_kwargs=None, verbose=False):
         self.filename = filename
         self.f = h5py.File(self.filename, 'r')
         self.verbose = verbose
         self.check_dataset()
+        if transform_func is None:
+            self.transform_func = self.resize_dp
+        else:
+            self.transform_func = transform_func
+        if transform_func_kwargs is None:
+            transform_func_kwargs = {}
+        self.transform_func_kwargs = transform_func_kwargs
 
     def __len__(self):
         return self.f['data/real'].shape[0]
@@ -40,8 +47,10 @@ class HDF5Dataset(Dataset):
         return dp, real_mag, real_phase
 
     def process_data(self, dp, real_mag, real_phase):
-        if not np.array_equal(dp.shape[-2:], real_phase.shape[-2:]):
-            dp = self.resize_dp(dp, target_shape=real_phase.shape[-2:])
+        target_shape = real_phase.shape[-2:]
+        if self.transform_func == self.resize_dp:
+            self.transform_func_kwargs = {'target_shape': target_shape}
+        dp = self.transform_func(dp, **self.transform_func_kwargs)
         # Zero small elements
         dp = np.where(dp < 3, 0, dp)
         # Reshape to (N, C, H, W) and cast to tensor.
@@ -55,8 +64,9 @@ class HDF5Dataset(Dataset):
             real_phase = torch.tensor(real_phase[np.newaxis, np.newaxis, :, :].astype('float32'))
         return dp, real_mag, real_phase
 
-    def resize_dp(self, dp, target_shape):
-        return transform_data_for_ptychonn(dp, target_shape)
+    def resize_dp(self, dp, target_shape=(128, 128)):
+        if not np.array_equal(dp.shape[-2:], target_shape):
+            return transform_data_for_ptychonn(dp, target_shape)
 
     def check_dataset(self):
         required_keys = ['data/real', 'data/reciprocal']

@@ -1,11 +1,47 @@
 import collections
+import json
+import os
 
 import torch
 
-class InferenceConfigDict(collections.defaultdict):
 
+class ConfigDict(collections.defaultdict):
     def __init__(self, *args, **kwargs):
         super().__init__(lambda: None)
+
+    @staticmethod
+    def is_jsonable(x):
+        try:
+            json.dumps(x)
+            return True
+        except (TypeError, OverflowError):
+            return False
+
+    def get_serializable_dict(self):
+        d = {}
+        for key in self.keys():
+            v = self[key]
+            if not self.__class__.is_jsonable(v):
+                if isinstance(v, (tuple, list)):
+                    v = '_'.join([str(x) for x in v])
+                else:
+                    v = str(v)
+            d[key] = v
+        return d
+
+    def dump_to_json(self, filename):
+        try:
+            f = open(filename, 'w')
+            d = self.get_serializable_dict()
+            json.dump(d, f)
+            f.close()
+        except:
+            print('Failed to dump json.')
+
+class InferenceConfigDict(ConfigDict):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
         self['batch_size'] = 1
         # Path to a trained PtychoNN model.
         self['model_path'] = None
@@ -34,9 +70,9 @@ class InferenceConfigDict(collections.defaultdict):
         self['debug'] = None
 
 
-class TrainingConfigDict(collections.defaultdict):
+class TrainingConfigDict(ConfigDict):
     def __init__(self, *args, **kwargs):
-        super().__init__(lambda: None)
+        super().__init__()
         self['batch_size_per_process'] = 64
         self['num_epochs'] = 60
         self['learning_rate_per_process'] = 1e-3
