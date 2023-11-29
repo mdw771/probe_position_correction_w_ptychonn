@@ -243,6 +243,7 @@ class PtychoNNTrainer:
         if os.path.exists(dest_path):
             os.remove(dest_path)
         torch.save(self.model.module.state_dict(), dest_path)
+        self.config_dict.dump_to_json(os.path.join(path, 'configs.json'))
 
     def plot_training_history(self):
         self.plot_lr_history()
