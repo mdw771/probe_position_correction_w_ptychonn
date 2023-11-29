@@ -5,6 +5,7 @@ import skimage.registration
 import skimage.feature
 import sklearn.cluster
 import matplotlib.pyplot as plt
+import scipy.ndimage as ndi
 
 from pppc.message_logger import logger
 
@@ -174,6 +175,7 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         super().__init__(*args, **kwargs)
 
     def run(self, previous, current, *args, **kwargs):
+        self.status = self.status_dict['ok']
         feature_extractor = skimage.feature.SIFT()
         feature_extractor.detect_and_extract(previous)
         keypoints_prev = feature_extractor.keypoints
@@ -185,7 +187,7 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         matched_points_prev = np.take(keypoints_prev, matches[:, 0], axis=0)
         matched_points_curr = np.take(keypoints_curr, matches[:, 1], axis=0)
         # Remove outliers
-        majority_inds = self.find_majority_pairs(matched_points_prev, matched_points_curr)
+        majority_inds, kmeans_result = self.find_majority_pairs(matched_points_prev, matched_points_curr)
         matched_points_prev = matched_points_prev[majority_inds]
         matched_points_curr = matched_points_curr[majority_inds]
         matches = matches[majority_inds]
@@ -193,6 +195,8 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         # Just calculate the averaged offset since we only want translation
         offset = np.mean(matched_points_prev - matched_points_curr, axis=0)
 
+        # self.check_clustering_quality(kmeans_result)
+        self.check_offset_quality(previous, current, offset)
         # fig, ax = plt.subplots(1, 1)
         # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
         return offset
@@ -205,9 +209,48 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         :param matched_points_curr: np.ndarray.
         :return: np.ndarray.
         """
-        kmeans = sklearn.cluster.KMeans(n_clusters=2, n_init='auto')
+        kmeans = sklearn.cluster.KMeans(n_clusters=min(2, matched_points_curr.shape[0]), n_init='auto')
         shift_vectors = matched_points_curr - matched_points_prev
         res = kmeans.fit(shift_vectors)
         majority_cluster_ind = np.argmax(np.unique(res.labels_, return_counts=True)[1])
         majority_inds = np.where(res.labels_ == majority_cluster_ind)[0]
-        return majority_inds
+        return majority_inds, res
+
+    def check_clustering_quality(self, kmeans_result):
+        # If the majority cluster does not dominate, the result is less confident.
+        labels, counts = np.unique(kmeans_result.labels_, return_counts=True)
+        counts = np.sort(counts)
+        if len(counts) > 1 and (counts[-1] - counts[-2]) / counts[-2] < 0.3:
+            self.status = self.status_dict['bad_fit']
+            logger.info('Non-dominating majority cluster: {} vs {}'.format(counts[-1], counts[-2]))
+            return
+        if counts[-1] < 4:
+            self.status = self.status_dict['bad_fit']
+            logger.info('Too few majority matches ({}).'.format(counts[-1]))
+            return
+
+    def check_offset_quality(self, prev, curr, offset):
+        image_offset = -offset
+        prev_shifted = np.fft.ifft2(ndi.fourier_shift(np.fft.fft2(prev), image_offset)).real
+
+        # fig, ax = plt.subplots(2, 2)
+        # ax[0, 0].imshow(prev)
+        # ax[0, 1].imshow(curr)
+        # ax[1, 0].imshow(prev_shifted)
+        # ax[1, 1].imshow(curr)
+        # plt.show()
+
+        sy, sx = 0, 0
+        ey, ex = prev.shape
+        if image_offset[0] > 0:
+            sy = int(np.ceil(image_offset[0]))
+        elif image_offset[0] < 0:
+            ey = prev.shape[0] - int(np.ceil(-image_offset[0]))
+        if image_offset[1] > 0:
+            sx = int(np.ceil(image_offset[1]))
+        elif image_offset[1] < 0:
+            ex = prev.shape[1] - int(np.ceil(-image_offset[1]))
+        error = np.mean((prev_shifted[sy:ey, sx:ex] - curr[sy:ey, sx:ex]) ** 2)
+        if error > 0.3:
+            logger.info('Large error after applying offset ({}).'.format(error))
+            self.status = self.status_dict['drift']

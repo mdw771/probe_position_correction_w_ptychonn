@@ -200,7 +200,7 @@ class TileStitcher:
         self.image_stitched = None
         self.position_list = None
         self.flip_lr = False
-        self.name_prefix = 'pred_ph'
+        self.name_prefix = 'pred_phase_'
 
     def build(self):
         self.build_position_list()

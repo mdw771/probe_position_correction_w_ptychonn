@@ -34,6 +34,9 @@ class PtychoNNProbePositionCorrector:
         self.debug = self.config_dict['debug']
         self.registrator = None
         self.method = self.config_dict['method']
+        self.lmbda_collective = 1e-3
+        self.a_mat = []
+        self.b_vec = []
 
     def build(self):
         self.ptycho_reconstructor.build()
@@ -103,7 +106,7 @@ class PtychoNNProbePositionCorrector:
         Run serial mode probe position correction.
         """
         previous_obj = self.reconstruct_dp(0)[1][0]
-        previous_offset = [0, 0]
+        previous_offset = np.array([0, 0])
         for ind in trange(1, self.n_dps):
             current_obj = self.reconstruct_dp(ind)[1][0]
             offset = self.registrator.run(previous_obj, current_obj)
@@ -119,15 +122,31 @@ class PtychoNNProbePositionCorrector:
                 print('Offset: {}'.format(offset))
             self._update_probe_position_list(ind, offset)
             previous_obj = current_obj
-            previous_offset = offset
+            previous_offset = self.update_previous_offset(previous_offset, offset, i_iteration=ind)
         self.new_probe_positions.plot()
+
+    def update_previous_offset(self, previous_offset, current_offset, i_iteration):
+        """
+        Update the running average of previous offsets, so that it is correct by momentum.
+
+        :param previous_offset: np.ndarray.
+        :param current_offset: np.ndarray.
+        :param i_iteration: int. Current iteration.
+        :return: np.ndarray.
+        """
+        beta = 0.5
+        if i_iteration <= 1:
+            previous_offset = current_offset
+        else:
+            previous_offset = beta * previous_offset + (1 - beta) * current_offset
+        return previous_offset
 
     def run_probe_position_correction_collective(self):
         """
         Run collective probe position correction.
         """
-        a_mat = []
-        b_vec = []
+        self.a_mat = []
+        self.b_vec = []
         # A hash table used to keep track of already registered DP pairs. One can then check whether a pair has been
         # registered with O(1) time.
         registered_pair_hash_table = collections.defaultdict(lambda: None)
@@ -156,15 +175,28 @@ class PtychoNNProbePositionCorrector:
                     plt.show()
                     plt.tight_layout()
                     print('Offset: {}'.format(offset))
-                if self.registrator.get_status() == self.registrator.get_status_code('drift'):
+                # We want to be more strict with collective mode. If a result is less confident, just skip it.
+                if self.registrator.get_status() != self.registrator.get_status_code('ok'):
                     continue
                 else:
-                    b_vec.append(np.array(offset))
-                    a_mat.append(self._generate_amat_row(i_dp, ind_neighbor))
-        a_mat = np.stack(a_mat)
-        b_vec = np.stack(b_vec)
-        self.new_probe_positions.array = np.linalg.pinv(a_mat) @ b_vec
+                    self.b_vec.append(np.array(offset))
+                    self.a_mat.append(self._generate_amat_row(i_dp, ind_neighbor))
+        self.a_mat = np.stack(self.a_mat)
+        self.b_vec = np.stack(self.b_vec)
+        self.solve_linear_system(mode='residue')
         self.new_probe_positions.plot()
+
+    def solve_linear_system(self, mode='residue'):
+        a_mat = self.a_mat
+        b_vec = self.b_vec
+        if mode == 'residue':
+            x0_vec = self.orig_probe_positions.array
+            b_vec_damped = a_mat.T @ b_vec - a_mat.T @ (a_mat @ x0_vec)
+            a_damped = a_mat.T @ a_mat + self.lmbda_collective * np.eye(a_mat.shape[1])
+            delta_x_vec = np.linalg.inv(a_damped) @ b_vec_damped
+            self.new_probe_positions.array = self.orig_probe_positions.array + delta_x_vec
+        else:
+            self.new_probe_positions.array = np.linalg.pinv(a_mat) @ b_vec
 
     def _generate_amat_row(self, this_ind, neightbor_ind):
         a = np.zeros(self.n_dps)

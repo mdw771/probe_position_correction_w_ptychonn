@@ -3,6 +3,7 @@ import copy
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
+import pandas as pd
 
 from pppc.io import load_probe_positions_from_file
 
@@ -58,3 +59,12 @@ class ProbePositionList:
             plt.show()
         if return_obj:
             return fig, ax, scat
+
+    def to_csv(self, filename, unit='m', psize_nm=1):
+        arr = self.array
+        if unit != 'pixel':
+            arr = arr * psize_nm
+            factor = {'m': 1e9, 'cm': 1e7, 'mm': 1e6, 'um': 1e3, 'nm': 1}[unit]
+            arr = arr / factor
+        df = pd.DataFrame(arr)
+        df.to_csv(filename, header=False, index=False)
