@@ -241,8 +241,9 @@ class TileStitcher:
         psize_m = self.position_list.psize_nm * 1e-9
         pos_x = pos[:, 1] * -1
         pos_y = pos[:, 0] * -1
-        x = np.arange(pos_x.min() - 0.5e-6, pos_x.max() + 0.5e-6, psize_m)
-        y = np.arange(pos_y.min() - 0.5e-6, pos_y.max() + 0.5e-6, psize_m)
+        margin_m = [(self.images[0].shape[i] // 2 + 10) * psize_m for i in range(2)]
+        x = np.arange(pos_x.min() - margin_m[1], pos_x.max() + margin_m[1], psize_m)
+        y = np.arange(pos_y.min() - margin_m[0], pos_y.max() + margin_m[0], psize_m)
 
         self.image_stitched = np.zeros((y.shape[0], x.shape[0]))
         cnt = np.copy(self.image_stitched)
@@ -254,13 +255,13 @@ class TileStitcher:
         yy -= yy.mean()
 
         for i in tqdm.trange(data.shape[0], position=0, leave=True):
-            xxx = xx - pos_x[i]
-            yyy = yy - pos_y[i]
+            xxx = xx + pos_x[i]
+            yyy = yy + pos_y[i]
             img = np.fliplr(data[i, :, :]) if self.flip_lr else data[i, :, :]
+            img = img[::-1, ::-1]
             find_pha = interpolate.interp2d(xxx[:], yyy[:], img, kind='linear', fill_value=0)
             # find_pha = interpolate.RegularGridInterpolator((yyy[:],xxx[:]),data[i,:,:],\
             #                                               method='linear', fill_value=0, bounds_error=False)
-            # crop out 40 pixels on each end, you can try 32, 16...
             tmp = find_pha(x, y)
             cnt += tmp != 0
             self.image_stitched += tmp
