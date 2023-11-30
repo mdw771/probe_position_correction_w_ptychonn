@@ -12,13 +12,15 @@ from pppc.message_logger import logger
 
 class Registrator:
 
-    def __init__(self, method='error_map', max_shift=None):
+    def __init__(self, method='error_map', max_shift=None, random_seed=123):
         self.method = method
         self.max_shift = max_shift
+        self.random_seed = random_seed
         self.algorithm_dict = {'error_map': ErrorMapRegistrationAlgorithm,
                                'phase_correlation': PhaseCorrelationRegistrationAlgorithm,
                                'sift': SIFTRegistrationAlgorithm}
         self.algorithm = self.algorithm_dict[method](max_shift=self.max_shift)
+        self.algorithm.random_seed = self.random_seed
 
     def run(self, previous, current):
         """
@@ -43,6 +45,7 @@ class RegistrationAlgorithm:
     def __init__(self, *args, **kwargs):
         self.status_dict = {'ok': 0, 'bad_fit': 1, 'drift': 2}
         self.status = 0
+        self.random_seed = 123
 
     def run(self, previous, current, *args, **kwargs):
         pass
@@ -209,7 +212,8 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         :param matched_points_curr: np.ndarray.
         :return: np.ndarray.
         """
-        kmeans = sklearn.cluster.KMeans(n_clusters=min(2, matched_points_curr.shape[0]), n_init='auto')
+        kmeans = sklearn.cluster.KMeans(n_clusters=min(2, matched_points_curr.shape[0]), n_init='auto',
+                                        random_state=self.random_seed)
         shift_vectors = matched_points_curr - matched_points_prev
         res = kmeans.fit(shift_vectors)
         majority_cluster_ind = np.argmax(np.unique(res.labels_, return_counts=True)[1])

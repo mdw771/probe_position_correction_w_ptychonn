@@ -17,6 +17,7 @@ from pppc.io import create_data_file_handle
 from pppc.position_list import ProbePositionList
 from pppc.registrator import Registrator
 from pppc.util import class_timeit
+from pppc.message_logger import logger
 
 
 class PtychoNNProbePositionCorrector:
@@ -39,6 +40,9 @@ class PtychoNNProbePositionCorrector:
         self.b_vec = []
 
     def build(self):
+        if self.config_dict['random_seed'] is not None:
+            logger.info('Random seed is set to {}.'.format(self.config_dict['random_seed']))
+            np.random.seed(self.config_dict['random_seed'])
         self.ptycho_reconstructor.build()
         if not self.config_dict['dp_data_file_handle']:
             self.dp_data_fhdl = create_data_file_handle(self.config_dict['dp_data_path'])
@@ -57,7 +61,8 @@ class PtychoNNProbePositionCorrector:
         self.new_probe_positions = self.orig_probe_positions.copy_with_zeros()
 
         self.registrator = Registrator(method=self.config_dict['registration_method'],
-                                       max_shift=self.config_dict['max_shift'])
+                                       max_shift=self.config_dict['max_shift'],
+                                       random_seed=self.config_dict['random_seed'])
 
     def run(self):
         if self.method == 'serial':
@@ -123,7 +128,6 @@ class PtychoNNProbePositionCorrector:
             self._update_probe_position_list(ind, offset)
             previous_obj = current_obj
             previous_offset = self.update_previous_offset(previous_offset, offset, i_iteration=ind)
-        self.new_probe_positions.plot()
 
     def update_previous_offset(self, previous_offset, current_offset, i_iteration):
         """
@@ -184,7 +188,6 @@ class PtychoNNProbePositionCorrector:
         self.a_mat = np.stack(self.a_mat)
         self.b_vec = np.stack(self.b_vec)
         self.solve_linear_system(mode='residue')
-        self.new_probe_positions.plot()
 
     def solve_linear_system(self, mode='residue'):
         a_mat = self.a_mat

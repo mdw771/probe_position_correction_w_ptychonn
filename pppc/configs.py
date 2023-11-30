@@ -73,6 +73,7 @@ class InferenceConfigDict(ConfigDict):
         self['registration_method'] = 'error_map'
         # Number of neighbors in collective registration
         self['num_neighbors_collective'] = 3
+        self['random_seed'] = 123
         self['debug'] = None
 
 
