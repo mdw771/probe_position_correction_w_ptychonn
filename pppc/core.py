@@ -20,6 +20,87 @@ from pppc.util import class_timeit
 from pppc.message_logger import logger
 
 
+class OffsetEstimator:
+
+    def __init__(self, beta=0.5, order=2):
+        self.beta = beta
+        self.beta_step_length = 0.9
+        self.order = order
+        self.v_bar = np.array([0., 0.])  # Accumulated velocity
+        self.a_bar = np.array([0., 0.])  # Accumulated acceleration
+        self.delta_a_bar = np.array([0., 0.])  # Accumulated change of acceleration
+        self.last_v = np.array([0., 0.])
+        self.last_a = np.array([0., 0.])
+        self.i_iter = 0
+        self.step_length_bar = 0.0
+
+    def update_offset(self, v):
+        if self.order == 3:
+            if self.i_iter > 2:
+                this_a = v - self.last_v
+                this_delta_a = this_a - self.last_a
+                self.delta_a_bar = self.beta * self.delta_a_bar + (1 - self.beta) * this_delta_a
+                self.last_a = this_a
+            elif self.i_iter == 2:
+                this_a = v - self.last_v
+                self.delta_a_bar = this_a - self.last_a
+                self.last_a = this_a
+            elif self.i_iter == 1:
+                this_a = v - self.last_v
+                self.last_a = this_a
+            else:
+                self.delta_a_bar = np.array([0., 0.])
+        if self.order == 2:
+            if self.i_iter > 1:
+                this_a = v - self.last_v
+                self.a_bar = self.beta * self.a_bar + (1 - self.beta) * this_a
+            elif self.i_iter == 1:
+                self.a_bar = v - self.last_v
+            else:
+                self.a_bar = np.array([0., 0.])
+        if self.order == 1:
+            if self.i_iter > 0:
+                self.v_bar = self.beta * self.v_bar + (1 - self.beta) * v
+            else:
+                self.v_bar = v
+        self.last_v = v
+        self.update_step_length_bar(v)
+        self.i_iter += 1
+
+    def update_offset_with_estimated_value(self, v):
+        """
+        If the offset of the current iteration is estimated, then only update last-iteration values and the
+        iteration number, but do not change any accumulated values.
+
+        :param v: np.ndarray.
+        """
+        if self.order == 3:
+            self.last_a = v - self.last_v
+        self.last_v = v
+        self.i_iter += 1
+
+    def update_step_length_bar(self, v):
+        if self.i_iter == 0:
+            self.step_length_bar = np.linalg.norm(v)
+        else:
+            self.step_length_bar = (self.beta_step_length * self.step_length_bar +
+                                    (1 - self.beta_step_length) * np.linalg.norm(v))
+
+    def estimate(self):
+        this_v = 0.0
+        if self.order == 0:
+            this_v = self.last_v
+        elif self.order == 1:
+            this_v = self.v_bar
+        elif self.order == 2:
+            this_v = self.last_v + self.a_bar
+        elif self.order == 3:
+            this_a = self.last_a + self.delta_a_bar
+            this_v = self.last_v + this_a
+        this_v = this_v / np.linalg.norm(this_v) * self.step_length_bar
+        return this_v
+
+
 class PtychoNNProbePositionCorrector:
 
     def __init__(self, config_dict: InferenceConfigDict):
@@ -110,13 +191,14 @@ class PtychoNNProbePositionCorrector:
         """
         Run serial mode probe position correction.
         """
+        offset_tracker = OffsetEstimator(beta=self.config_dict['offset_estimator_beta'],
+                                         order=self.config_dict['offset_estimator_order'])
         previous_obj = self.reconstruct_dp(0)[1][0]
-        previous_offset = np.array([0, 0])
         for ind in trange(1, self.n_dps):
             current_obj = self.reconstruct_dp(ind)[1][0]
             offset = self.registrator.run(previous_obj, current_obj)
             if self.registrator.get_status() == self.registrator.get_status_code('drift'):
-                offset = previous_offset
+                offset = offset_tracker.estimate()
             if self.debug:
                 fig, ax = plt.subplots(1, 2)
                 ax[0].imshow(previous_obj)
@@ -127,23 +209,7 @@ class PtychoNNProbePositionCorrector:
                 print('Offset: {}'.format(offset))
             self._update_probe_position_list(ind, offset)
             previous_obj = current_obj
-            previous_offset = self.update_previous_offset(previous_offset, offset, i_iteration=ind)
-
-    def update_previous_offset(self, previous_offset, current_offset, i_iteration):
-        """
-        Update the running average of previous offsets, so that it is correct by momentum.
-
-        :param previous_offset: np.ndarray.
-        :param current_offset: np.ndarray.
-        :param i_iteration: int. Current iteration.
-        :return: np.ndarray.
-        """
-        beta = 0.5
-        if i_iteration <= 1:
-            previous_offset = current_offset
-        else:
-            previous_offset = beta * previous_offset + (1 - beta) * current_offset
-        return previous_offset
+            offset_tracker.update_offset(offset)
 
     def run_probe_position_correction_collective(self):
         """
