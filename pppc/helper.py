@@ -1,5 +1,8 @@
-import pycuda.driver as cuda
-import tensorrt as trt
+try:
+    import pycuda.driver as cuda
+    import tensorrt as trt
+except ImportError:
+    print('Unable to import pycuda and tensorrt. ')
 from skimage.transform import resize
 import numpy as np
 
@@ -101,5 +104,5 @@ def crop_center(img, shape_to_keep=(64, 64)):
         st = (img.shape[i] - shape_to_keep[i]) // 2
         end = st + shape_to_keep[i]
         slicer.append(slice(st, end))
-    img = img[*slicer]
+    img = img[tuple(slicer)]
     return img
