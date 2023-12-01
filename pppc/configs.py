@@ -75,6 +75,7 @@ class InferenceConfigDict(ConfigDict):
         self['num_neighbors_collective'] = 3
         self['offset_estimator_order'] = 1
         self['offset_estimator_beta'] = 0.5
+        self['smooth_constraint_weight'] = 1e-2
         self['random_seed'] = 123
         self['debug'] = None
 

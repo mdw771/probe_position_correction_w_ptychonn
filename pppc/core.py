@@ -117,8 +117,8 @@ class PtychoNNProbePositionCorrector:
         self.registrator = None
         self.method = self.config_dict['method']
         self.lmbda_collective = 1e-3
-        self.a_mat = []
-        self.b_vec = []
+        self.a_mat = np.array([])
+        self.b_vec = np.array([])
 
     def build(self):
         if self.config_dict['random_seed'] is not None:
@@ -215,6 +215,10 @@ class PtychoNNProbePositionCorrector:
         """
         Run collective probe position correction.
         """
+        self.build_linear_system_for_collective_correction()
+        self.solve_linear_system(mode='residue', smooth_constraint_weight=self.config_dict['smooth_constraint_weight'])
+
+    def build_linear_system_for_collective_correction(self):
         self.a_mat = []
         self.b_vec = []
         # A hash table used to keep track of already registered DP pairs. One can then check whether a pair has been
@@ -253,19 +257,34 @@ class PtychoNNProbePositionCorrector:
                     self.a_mat.append(self._generate_amat_row(i_dp, ind_neighbor))
         self.a_mat = np.stack(self.a_mat)
         self.b_vec = np.stack(self.b_vec)
-        self.solve_linear_system(mode='residue')
 
-    def solve_linear_system(self, mode='residue'):
+    def solve_linear_system(self, mode='residue', smooth_constraint_weight=1e-3):
         a_mat = self.a_mat
         b_vec = self.b_vec
         if mode == 'residue':
             x0_vec = self.orig_probe_positions.array
             b_vec_damped = a_mat.T @ b_vec - a_mat.T @ (a_mat @ x0_vec)
             a_damped = a_mat.T @ a_mat + self.lmbda_collective * np.eye(a_mat.shape[1])
+            if smooth_constraint_weight > 0:
+                s_mat = self.get_square_roll_matrix()
+                a_damped = a_damped + smooth_constraint_weight * s_mat
+                b_vec_damped = b_vec_damped - smooth_constraint_weight * s_mat @ x0_vec
             delta_x_vec = np.linalg.inv(a_damped) @ b_vec_damped
             self.new_probe_positions.array = self.orig_probe_positions.array + delta_x_vec
         else:
             self.new_probe_positions.array = np.linalg.pinv(a_mat) @ b_vec
+
+    def get_square_roll_matrix(self):
+        s_mat = np.eye(self.a_mat.shape[1]) * 2
+        s_mat[0, 0] = 1
+        s_mat[-1, -1] = 1
+        off_diag_y_inds = tuple(range(s_mat.shape[0] - 1))
+        off_diag_x_inds = tuple(range(1, s_mat.shape[0]))
+        s_mat[off_diag_y_inds, off_diag_x_inds] = -1
+        off_diag_y_inds = tuple(range(1, s_mat.shape[0]))
+        off_diag_x_inds = tuple(range(s_mat.shape[0] - 1))
+        s_mat[off_diag_y_inds, off_diag_x_inds] = -1
+        return s_mat
 
     def _generate_amat_row(self, this_ind, neightbor_ind):
         a = np.zeros(self.n_dps)
