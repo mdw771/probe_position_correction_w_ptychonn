@@ -239,8 +239,8 @@ class TileStitcher:
         pos = self.position_list.array
         data = self.images
         psize_m = self.position_list.psize_nm * 1e-9
-        pos_x = pos[:, 1] * -1
-        pos_y = pos[:, 0] * -1
+        pos_x = pos[:, 1]
+        pos_y = pos[:, 0]
         margin_m = [(self.images[0].shape[i] // 2 + 10) * psize_m for i in range(2)]
         x = np.arange(pos_x.min() - margin_m[1], pos_x.max() + margin_m[1], psize_m)
         y = np.arange(pos_y.min() - margin_m[0], pos_y.max() + margin_m[0], psize_m)
@@ -258,7 +258,7 @@ class TileStitcher:
             xxx = xx + pos_x[i]
             yyy = yy + pos_y[i]
             img = np.fliplr(data[i, :, :]) if self.flip_lr else data[i, :, :]
-            img = img[::-1, ::-1]
+            # img = img[::-1, ::-1]
             find_pha = interpolate.interp2d(xxx[:], yyy[:], img, kind='linear', fill_value=0)
             # find_pha = interpolate.RegularGridInterpolator((yyy[:],xxx[:]),data[i,:,:],\
             #                                               method='linear', fill_value=0, bounds_error=False)
