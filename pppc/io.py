@@ -1,8 +1,10 @@
 import os
+import glob
 
 import numpy as np
 import pandas as pd
 from skimage.transform import resize
+import tifffile
 
 from pppc.util import class_timeit
 from pppc.helper import transform_data_for_ptychonn
@@ -69,7 +71,7 @@ class DataFileHandle:
     def slice_array(self, slicers):
         """
         Subslice the data array.
-
+self
         :param slicers: list[slice].
         """
         self.array = self.array[slicers]
@@ -155,3 +157,31 @@ def load_probe_positions_from_file(file_path, first_is_x=True):
     if first_is_x:
         probe_pos = probe_pos[:, ::-1]
     return probe_pos
+
+
+def read_all_images(source_dir, name_prefix):
+    flist = glob.glob(os.path.join(source_dir, '{}*'.format(name_prefix)))
+    n = len(flist)
+    images = []
+    prefix = find_true_prefix([os.path.basename(x) for x in flist[:2]])
+    for i in range(n):
+        img = tifffile.imread(
+            os.path.join(source_dir, '{}{}.tiff'.format(prefix, i)))
+        images.append(img)
+    images = np.stack(images)
+    return images
+
+
+def find_true_prefix(name_list):
+    s = ''
+    for i in range(len(name_list[0])):
+        flag = True
+        for fname in name_list:
+            if s + name_list[0][i] not in fname:
+                flag = False
+                break
+        if flag:
+            s = s + name_list[0][i]
+        else:
+            break
+    return s

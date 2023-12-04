@@ -191,6 +191,10 @@ class DatasetInferencer:
                                               '{}_{}.tiff'.format(name_prefix, ind)),
                                  arr[i])
 
+    def convert_output_files_into_single_tiff(self, prefix):
+        images = read_all_images(self.config_dict['prediction_output_path'], prefix)
+        tifffile.imwrite(os.path.join(self.config_dict['prediction_output_path'], '{}.tiff'.format(prefix)), images)
+
 
 class TileStitcher:
 
@@ -220,15 +224,7 @@ class TileStitcher:
                 self.config_dict['prediction_output_path'][-5:] == '.tiff':
             self.images = tifffile.imread(self.config_dict['prediction_output_path'])
         else:
-            flist = glob.glob(os.path.join(self.config_dict['prediction_output_path'], '{}*'.format(self.name_prefix)))
-            n = len(flist)
-            self.images = []
-            prefix = self.find_true_prefix([os.path.basename(x) for x in flist[:2]])
-            for i in range(n):
-                img = tifffile.imread(
-                    os.path.join(self.config_dict['prediction_output_path'], '{}{}.tiff'.format(prefix, i)))
-                self.images.append(img)
-            self.images = np.stack(self.images)
+            self.images = read_all_images(self.config_dict['prediction_output_path'], self.name_prefix)
         if self.config_dict['central_crop'] is not None:
             self.images = crop_center(self.images, self.config_dict['central_crop'])
 
@@ -266,17 +262,3 @@ class TileStitcher:
             cnt += tmp != 0
             self.image_stitched += tmp
         self.image_stitched = (self.image_stitched / np.maximum(cnt, cnt1))[:, ::-1]
-
-    def find_true_prefix(self, name_list):
-        s = ''
-        for i in range(len(name_list[0])):
-            flag = True
-            for fname in name_list:
-                if s + name_list[0][i] not in fname:
-                    flag = False
-                    break
-            if flag:
-                s = s + name_list[0][i]
-            else:
-                break
-        return s
