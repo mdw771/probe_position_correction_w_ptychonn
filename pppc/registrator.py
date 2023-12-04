@@ -4,6 +4,7 @@ import numpy as np
 import skimage.registration
 import skimage.feature
 import sklearn.cluster
+import sklearn.ensemble
 import matplotlib.pyplot as plt
 import scipy.ndimage as ndi
 
@@ -189,8 +190,13 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         matches = skimage.feature.match_descriptors(descriptors_prev, descriptors_curr)
         matched_points_prev = np.take(keypoints_prev, matches[:, 0], axis=0)
         matched_points_curr = np.take(keypoints_curr, matches[:, 1], axis=0)
+
+        # fig, ax = plt.subplots(1, 1)
+        # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
+
         # Remove outliers
-        majority_inds, kmeans_result = self.find_majority_pairs(matched_points_prev, matched_points_curr)
+        # majority_inds, kmeans_result = self.find_majority_pairs_ransac(matched_points_prev, matched_points_curr)
+        majority_inds, kmeans_result = self.find_majority_pairs_kmeans(matched_points_prev, matched_points_curr)
         matched_points_prev = matched_points_prev[majority_inds]
         matched_points_curr = matched_points_curr[majority_inds]
         matches = matches[majority_inds]
@@ -202,9 +208,25 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         self.check_offset_quality(previous, current, offset)
         # fig, ax = plt.subplots(1, 1)
         # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
+        # plt.show()
+
         return offset
 
-    def find_majority_pairs(self, matched_points_prev, matched_points_curr):
+    def find_majority_pairs_isoforest(self, matched_points_prev, matched_points_curr):
+        """
+        Find inlying matches, and return the indices.
+
+        :param matched_points_prev: np.ndarray.
+        :param matched_points_curr: np.ndarray.
+        :return: np.ndarray.
+        """
+        shift_vectors = matched_points_curr - matched_points_prev
+        isoforest = sklearn.ensemble.IsolationForest(n_estimators=10, random_state=self.random_seed)
+        res = isoforest.fit_predict(shift_vectors)
+        majority_inds = np.where(res == 1)[0]
+        return majority_inds, res
+
+    def find_majority_pairs_kmeans(self, matched_points_prev, matched_points_curr):
         """
         Cluster the shift vectors of matched point pairs into 2 clusters, and return the indices of the majority ones.
 
@@ -219,6 +241,33 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         majority_cluster_ind = np.argmax(np.unique(res.labels_, return_counts=True)[1])
         majority_inds = np.where(res.labels_ == majority_cluster_ind)[0]
         return majority_inds, res
+
+    def find_majority_pairs_ransac(self, matched_points_prev, matched_points_curr, n_iters=4, sigma=3.0):
+        """
+        Find inlying matches, and return the indices.
+
+        :param matched_points_prev: np.ndarray.
+        :param matched_points_curr: np.ndarray.
+        :return: np.ndarray.
+        """
+        shift_vectors = matched_points_curr - matched_points_prev
+        inlier_inds = list(range(shift_vectors.shape[0]))
+        last_inliner_inds = inlier_inds
+        inlier_shift_vectors = shift_vectors.copy()
+        for i_iter in range(n_iters):
+            std_vec = np.std(inlier_shift_vectors, axis=0)
+            mean_vec = np.median(inlier_shift_vectors, axis=0)
+            lb_vec = mean_vec - sigma * np.clip(std_vec, a_min=1e-3, a_max=5)
+            ub_vec = mean_vec + sigma * np.clip(std_vec, a_min=1e-3, a_max=5)
+            mask = np.logical_and(shift_vectors > lb_vec, shift_vectors < ub_vec)
+            inlier_inds = np.where(np.alltrue(mask, axis=1))[0]
+            if len(inlier_inds) == 0:
+                inlier_inds = last_inliner_inds
+                inlier_shift_vectors = shift_vectors[inlier_inds]
+                break
+            inlier_shift_vectors = shift_vectors[inlier_inds]
+            last_inliner_inds = inlier_inds
+        return inlier_inds, inlier_shift_vectors
 
     def check_clustering_quality(self, kmeans_result):
         # If the majority cluster does not dominate, the result is less confident.
