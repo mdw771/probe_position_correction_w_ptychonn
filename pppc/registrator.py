@@ -51,6 +51,26 @@ class RegistrationAlgorithm:
     def run(self, previous, current, *args, **kwargs):
         pass
 
+    def check_offset_quality(self, prev, curr, offset, update_status=True):
+        image_offset = -offset
+        prev_shifted = np.fft.ifft2(ndi.fourier_shift(np.fft.fft2(prev), image_offset)).real
+
+        sy, sx = 0, 0
+        ey, ex = prev.shape
+        if image_offset[0] > 0:
+            sy = int(np.ceil(image_offset[0]))
+        elif image_offset[0] < 0:
+            ey = prev.shape[0] - int(np.ceil(-image_offset[0]))
+        if image_offset[1] > 0:
+            sx = int(np.ceil(image_offset[1]))
+        elif image_offset[1] < 0:
+            ex = prev.shape[1] - int(np.ceil(-image_offset[1]))
+        error = np.mean((prev_shifted[sy:ey, sx:ex] - curr[sy:ey, sx:ex]) ** 2)
+        if error > 0.3 and update_status:
+            logger.info('Large error after applying offset ({}).'.format(error))
+            self.status = self.status_dict['drift']
+        return error
+
 
 class PhaseCorrelationRegistrationAlgorithm(RegistrationAlgorithm):
     def __init__(self, *args, **kwargs):
@@ -116,7 +136,7 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
         if a < 1e-3 or b < 1e-3:
             self.status = self.status_dict['bad_fit']
             return
-        if min_error > 0.5:
+        if min_error > 0.3:
             self.status = self.status_dict['bad_fit']
             return
         self.status = self.status_dict['ok']
@@ -179,7 +199,7 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         """
         SIFT registration.
 
-        :param outlier_removal_method: str. Can be 'kmeans', 'isoforest', 'ransac'.
+        :param outlier_removal_method: str. Can be 'trial_error', 'kmeans', 'isoforest', 'ransac'.
         """
         super().__init__(*args, **kwargs)
         self.outlier_removal_method = outlier_removal_method
@@ -199,9 +219,12 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
 
         # fig, ax = plt.subplots(1, 1)
         # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
+        # plt.title('Before')
+        # plt.show()
 
         # Remove outliers
-        majority_inds, outlier_removal_result = self.find_majority_pairs(matched_points_prev, matched_points_curr)
+        majority_inds, outlier_removal_result = self.find_majority_pairs(matched_points_prev, matched_points_curr,
+                                                                         prev_image=previous, current_image=current)
         matched_points_prev = matched_points_prev[majority_inds]
         matched_points_curr = matched_points_curr[majority_inds]
         matches = matches[majority_inds]
@@ -213,11 +236,13 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         self.check_offset_quality(previous, current, offset)
         # fig, ax = plt.subplots(1, 1)
         # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
+        # plt.title('After')
         # plt.show()
 
         return offset
 
-    def find_majority_pairs(self, matched_points_prev, matched_points_curr, *args, **kwargs):
+    def find_majority_pairs(self, matched_points_prev, matched_points_curr,
+                            prev_image=None, current_image=None, *args, **kwargs):
         if self.outlier_removal_method == 'kmeans':
             majority_inds, res = self.find_majority_pairs_kmeans(matched_points_prev, matched_points_curr)
         elif self.outlier_removal_method == 'isoforest':
@@ -225,6 +250,10 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         elif self.outlier_removal_method == 'ransac':
             majority_inds, res = self.find_majority_pairs_ransac(matched_points_prev, matched_points_curr,
                                                                  *args, **kwargs)
+        elif self.outlier_removal_method == 'trial_error':
+            majority_inds, res = self.find_majority_pairs_trial_error(matched_points_prev, matched_points_curr,
+                                                                      prev_image, current_image,
+                                                                      *args, **kwargs)
         else:
             raise ValueError('{} is not a valid method. '.format(self.outlier_removal_method))
         return majority_inds, res
@@ -241,6 +270,9 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         isoforest = sklearn.ensemble.IsolationForest(n_estimators=10, random_state=self.random_seed)
         res = isoforest.fit_predict(shift_vectors)
         majority_inds = np.where(res == 1)[0]
+        if len(majority_inds) == 0:
+            majority_inds = list(range(shift_vectors.shape[0]))
+            self.status = self.status_dict['bad_fit']
         return majority_inds, res
 
     def find_majority_pairs_kmeans(self, matched_points_prev, matched_points_curr):
@@ -258,6 +290,33 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         majority_cluster_ind = np.argmax(np.unique(res.labels_, return_counts=True)[1])
         majority_inds = np.where(res.labels_ == majority_cluster_ind)[0]
         return majority_inds, res
+
+    def find_majority_pairs_trial_error(self, matched_points_prev, matched_points_curr, prev_image, current_image,
+                                        error_threshold=0.5):
+        offset_list = matched_points_prev - matched_points_curr
+        good_inds = []
+        error_list = []
+        for i, offset in enumerate(offset_list[:min(10, offset_list.shape[0])]):
+            # If the offset is too large, the computed error would be inaccurate because there are too few pixels
+            # after excluding wrap-around regions. Thus it should be skipped.
+            if np.alltrue(np.abs(offset) < 0.6 * np.array(prev_image.shape)):
+                error = self.check_offset_quality(prev_image, current_image, offset, update_status=False)
+                if error < error_threshold:
+                    good_inds.append(i)
+                    error_list.append(error)
+        if len(good_inds) > 0:
+            temp_points_prev = matched_points_prev[good_inds]
+            temp_points_curr = matched_points_curr[good_inds]
+            good_inds_2, _ = self.find_majority_pairs_ransac(temp_points_prev, temp_points_curr,
+                                                             n_iters=1, sigma=3)
+            if len(good_inds_2) > 0:
+                good_inds = list(np.array(good_inds)[np.array(good_inds_2)])
+            else:
+                good_inds = []
+        if len(good_inds) == 0:
+            logger.info('Trial-error did not return any good candidates, thus switching to KMeans.')
+            good_inds, res = self.find_majority_pairs_kmeans(matched_points_prev, matched_points_curr)
+        return good_inds, error_list
 
     def find_majority_pairs_ransac(self, matched_points_prev, matched_points_curr, n_iters=4, sigma=3.0):
         """
@@ -299,28 +358,3 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
             logger.info('Too few majority matches ({}).'.format(counts[-1]))
             return
 
-    def check_offset_quality(self, prev, curr, offset):
-        image_offset = -offset
-        prev_shifted = np.fft.ifft2(ndi.fourier_shift(np.fft.fft2(prev), image_offset)).real
-
-        # fig, ax = plt.subplots(2, 2)
-        # ax[0, 0].imshow(prev)
-        # ax[0, 1].imshow(curr)
-        # ax[1, 0].imshow(prev_shifted)
-        # ax[1, 1].imshow(curr)
-        # plt.show()
-
-        sy, sx = 0, 0
-        ey, ex = prev.shape
-        if image_offset[0] > 0:
-            sy = int(np.ceil(image_offset[0]))
-        elif image_offset[0] < 0:
-            ey = prev.shape[0] - int(np.ceil(-image_offset[0]))
-        if image_offset[1] > 0:
-            sx = int(np.ceil(image_offset[1]))
-        elif image_offset[1] < 0:
-            ex = prev.shape[1] - int(np.ceil(-image_offset[1]))
-        error = np.mean((prev_shifted[sy:ey, sx:ex] - curr[sy:ey, sx:ex]) ** 2)
-        if error > 0.3:
-            logger.info('Large error after applying offset ({}).'.format(error))
-            self.status = self.status_dict['drift']
