@@ -9,6 +9,15 @@ class ConfigDict(collections.defaultdict):
     def __init__(self, *args, **kwargs):
         super().__init__(lambda: None)
 
+    def __str__(self):
+        s = ''
+        for key in self.keys():
+            s += '{}: {}\n'.format(key, self[key])
+        return s
+
+    def __repr__(self):
+        return self.__str__()
+
     @staticmethod
     def is_jsonable(x):
         try:
@@ -67,6 +76,7 @@ class InferenceConfigDict(ConfigDict):
 
         # ===== Image registration configs =====
         self['registration_method'] = 'error_map'
+        # Method for detecting outlier matches for SIFT. Can be "trial_error", "kmeans", "isoforest", "ransac".
         self['sift_outlier_removal_method'] = 'kmeans'
 
         # ===== General configs =====
