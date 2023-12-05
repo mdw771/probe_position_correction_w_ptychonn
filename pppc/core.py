@@ -298,3 +298,54 @@ class PtychoNNProbePositionCorrector:
         prev_raw_ind = self.dp_data_fhdl.get_actual_indices_for_consecutive_index(ind - 1, ravel=True)
         self.new_probe_positions.array[raw_ind] = self.new_probe_positions.array[prev_raw_ind] + offset
 
+
+class ProbePositionCorrectorChain:
+
+    def __init__(self, config_dict):
+        self.config_dict = config_dict
+        self.corrector_list = []
+        self.multiiter_keys = []
+        self.n_iters = 1
+
+    def build(self):
+        self.build_multiiter_entries()
+
+    def build_multiiter_entries(self):
+        has_multiiter_key = False
+        for key in self.config_dict.keys():
+            if 'multiiter' in key:
+                self.n_iters = len(self.config_dict[key])
+                self.multiiter_keys.append(key)
+                has_multiiter_key = True
+        if not has_multiiter_key:
+            raise ValueError('With ProbePositionCorrectorChain, there should be at least one entry in the config dict '
+                             'that ends with "_multiiter" and is a list whose length equals to the desired number of '
+                             'iterations. ')
+
+    def run(self):
+        for iter in range(self.n_iters):
+            self.run_correction_iteration(iter)
+
+    def run_correction_iteration(self, iter):
+        logger.info('Now running iteration {}.'.format(iter))
+        self.update_config_dict(iter)
+        print(self.config_dict)
+        corrector = PtychoNNProbePositionCorrector(config_dict=self.config_dict)
+        corrector.build()
+        corrector.orig_probe_positions.plot()
+        corrector.run()
+        self.corrector_list.append(corrector)
+
+    def get_ordinary_key_name(self, mikey):
+        ind = mikey.find('_multiiter')
+        return mikey[:ind]
+
+    def update_config_dict(self, iter):
+        for mikey in self.multiiter_keys:
+            key = self.get_ordinary_key_name(mikey)
+            self.config_dict[key] = self.config_dict[mikey][iter]
+        if iter > 0:
+            last_probe_pos_array = self.corrector_list[iter - 1].new_probe_positions.array
+            probe_pos_list = ProbePositionList(position_list=last_probe_pos_array)
+            self.config_dict['probe_position_list'] = probe_pos_list
+            logger.info('Using result from the last iteration to initialize probe position array...')
