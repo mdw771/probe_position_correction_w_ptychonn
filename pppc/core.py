@@ -143,7 +143,8 @@ class PtychoNNProbePositionCorrector:
 
         self.registrator = Registrator(method=self.config_dict['registration_method'],
                                        max_shift=self.config_dict['max_shift'],
-                                       random_seed=self.config_dict['random_seed'])
+                                       random_seed=self.config_dict['random_seed'],
+                                       outlier_removal_method=self.config_dict['sift_outlier_removal_method'])
 
     def run(self):
         if self.method == 'serial':

@@ -38,6 +38,16 @@ class ConfigDict(collections.defaultdict):
         except:
             print('Failed to dump json.')
 
+    def load_from_json(self, filename):
+        """
+        This function only overwrites entries contained in the JSON file. Unspecified entries are unaffected.
+        """
+        f = open(filename, 'r')
+        d = json.load(f)
+        for key in d.keys():
+            self[key] = d[key]
+        f.close()
+
 class InferenceConfigDict(ConfigDict):
 
     def __init__(self, *args, **kwargs):
@@ -55,6 +65,10 @@ class InferenceConfigDict(ConfigDict):
         self['prediction_output_path'] = None
         self['cpu_only'] = False
 
+        # ===== Image registration configs =====
+        self['registration_method'] = 'error_map'
+        self['sift_outlier_removal_method'] = 'kmeans'
+
         # ===== General configs =====
         self['dp_data_file_path'] = None
         # Used as an alternative to `dp_data_file_path`. Should be a `DataFileHandle` object.
@@ -70,7 +84,6 @@ class InferenceConfigDict(ConfigDict):
         # Method for correction. Can be 'serial' or 'collective'
         self['method'] = 'collective'
         self['max_shift'] = 7
-        self['registration_method'] = 'error_map'
         # Number of neighbors in collective registration
         self['num_neighbors_collective'] = 3
         self['offset_estimator_order'] = 1

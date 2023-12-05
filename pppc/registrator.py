@@ -13,14 +13,14 @@ from pppc.message_logger import logger
 
 class Registrator:
 
-    def __init__(self, method='error_map', max_shift=None, random_seed=123):
+    def __init__(self, method='error_map', max_shift=None, random_seed=123, **kwargs):
         self.method = method
         self.max_shift = max_shift
         self.random_seed = random_seed
         self.algorithm_dict = {'error_map': ErrorMapRegistrationAlgorithm,
                                'phase_correlation': PhaseCorrelationRegistrationAlgorithm,
                                'sift': SIFTRegistrationAlgorithm}
-        self.algorithm = self.algorithm_dict[method](max_shift=self.max_shift)
+        self.algorithm = self.algorithm_dict[method](max_shift=self.max_shift, **kwargs)
         self.algorithm.random_seed = self.random_seed
 
     def run(self, previous, current):
@@ -175,8 +175,14 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
 
 
 class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, outlier_removal_method='kmeans', **kwargs):
+        """
+        SIFT registration.
+
+        :param outlier_removal_method: str. Can be 'kmeans', 'isoforest', 'ransac'.
+        """
         super().__init__(*args, **kwargs)
+        self.outlier_removal_method = outlier_removal_method
 
     def run(self, previous, current, *args, **kwargs):
         self.status = self.status_dict['ok']
@@ -195,8 +201,7 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
 
         # Remove outliers
-        # majority_inds, kmeans_result = self.find_majority_pairs_ransac(matched_points_prev, matched_points_curr)
-        majority_inds, kmeans_result = self.find_majority_pairs_kmeans(matched_points_prev, matched_points_curr)
+        majority_inds, outlier_removal_result = self.find_majority_pairs(matched_points_prev, matched_points_curr)
         matched_points_prev = matched_points_prev[majority_inds]
         matched_points_curr = matched_points_curr[majority_inds]
         matches = matches[majority_inds]
@@ -204,13 +209,25 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         # Just calculate the averaged offset since we only want translation
         offset = np.mean(matched_points_prev - matched_points_curr, axis=0)
 
-        # self.check_clustering_quality(kmeans_result)
+        # self.check_clustering_quality(outlier_removal_result)
         self.check_offset_quality(previous, current, offset)
         # fig, ax = plt.subplots(1, 1)
         # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
         # plt.show()
 
         return offset
+
+    def find_majority_pairs(self, matched_points_prev, matched_points_curr, *args, **kwargs):
+        if self.outlier_removal_method == 'kmeans':
+            majority_inds, res = self.find_majority_pairs_kmeans(matched_points_prev, matched_points_curr)
+        elif self.outlier_removal_method == 'isoforest':
+            majority_inds, res = self.find_majority_pairs_isoforest(matched_points_prev, matched_points_curr)
+        elif self.outlier_removal_method == 'ransac':
+            majority_inds, res = self.find_majority_pairs_ransac(matched_points_prev, matched_points_curr,
+                                                                 *args, **kwargs)
+        else:
+            raise ValueError('{} is not a valid method. '.format(self.outlier_removal_method))
+        return majority_inds, res
 
     def find_majority_pairs_isoforest(self, matched_points_prev, matched_points_curr):
         """
