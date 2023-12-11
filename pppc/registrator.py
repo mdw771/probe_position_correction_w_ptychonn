@@ -204,8 +204,7 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         super().__init__(*args, **kwargs)
         self.outlier_removal_method = outlier_removal_method
 
-    def run(self, previous, current, *args, **kwargs):
-        self.status = self.status_dict['ok']
+    def find_keypoints(self, previous, current):
         feature_extractor = skimage.feature.SIFT()
         feature_extractor.detect_and_extract(previous)
         keypoints_prev = feature_extractor.keypoints
@@ -213,9 +212,19 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         feature_extractor.detect_and_extract(current)
         keypoints_curr = feature_extractor.keypoints
         descriptors_curr = feature_extractor.descriptors
+        return keypoints_prev, keypoints_curr, descriptors_prev, descriptors_curr
+
+    def find_matches(self, keypoints_prev, keypoints_curr, descriptors_prev, descriptors_curr):
         matches = skimage.feature.match_descriptors(descriptors_prev, descriptors_curr)
         matched_points_prev = np.take(keypoints_prev, matches[:, 0], axis=0)
         matched_points_curr = np.take(keypoints_curr, matches[:, 1], axis=0)
+        return matches, matched_points_prev, matched_points_curr
+
+    def run(self, previous, current, *args, **kwargs):
+        self.status = self.status_dict['ok']
+        keypoints_prev, keypoints_curr, descriptors_prev, descriptors_curr = self.find_keypoints(previous, current)
+        matches, matched_points_prev, matched_points_curr = self.find_matches(keypoints_prev, keypoints_curr,
+                                                                              descriptors_prev, descriptors_curr)
 
         # fig, ax = plt.subplots(1, 1)
         # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
@@ -240,6 +249,31 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         # plt.show()
 
         return offset
+
+    def run_affine(self, previous, current, *args, **kwargs):
+        self.status = self.status_dict['ok']
+        keypoints_prev, keypoints_curr, descriptors_prev, descriptors_curr = self.find_keypoints(previous, current)
+        matches, matched_points_prev, matched_points_curr = self.find_matches(keypoints_prev, keypoints_curr,
+                                                                              descriptors_prev, descriptors_curr)
+        # fig, ax = plt.subplots(1, 1)
+        # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
+        # plt.title('Before')
+        # plt.show()
+
+        # Remove outliers
+        majority_inds, outlier_removal_result = self.find_majority_pairs(matched_points_prev, matched_points_curr,
+                                                                         prev_image=previous, current_image=current)
+        matched_points_prev = matched_points_prev[majority_inds]
+        matched_points_curr = matched_points_curr[majority_inds]
+        matches = matches[majority_inds]
+
+        # fig, ax = plt.subplots(1, 1)
+        # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
+        # plt.title('After')
+        # plt.show()
+
+        affine_tform = skimage.transform.estimate_transform('euclidean', matched_points_prev, matched_points_curr)
+        return affine_tform
 
     def find_majority_pairs(self, matched_points_prev, matched_points_curr,
                             prev_image=None, current_image=None, *args, **kwargs):
