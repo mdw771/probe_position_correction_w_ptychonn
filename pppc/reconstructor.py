@@ -192,7 +192,7 @@ class DatasetInferencer:
                                  arr[i])
 
     def convert_output_files_into_single_tiff(self, prefix):
-        images = read_all_images(self.config_dict['prediction_output_path'], prefix)
+        images = read_all_images(self.config_dict['prediction_output_path'], prefix + '_')
         tifffile.imwrite(os.path.join(self.config_dict['prediction_output_path'], '{}.tiff'.format(prefix)), images)
 
 
