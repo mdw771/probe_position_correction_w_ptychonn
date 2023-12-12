@@ -26,12 +26,14 @@ def clean_data(arr):
     arr[mask] = vals
     return arr
 
-#scan_indices = [234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
-scan_indices = [234, 235, 236]
-config_list = [('true', 0), ('baseline', 0), ('baseline', 1), ('calculated', 0), ('calculated', 1)]
+scan_indices = [234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
+# config_list = [('true', 0), ('baseline', 0), ('baseline', 1), ('calculated', 0), ('calculated', 1)]
+config_list = [('baseline', 1), ('calculated', 1)]
+record_intermediate_states = True
 
 for scan_idx in scan_indices:
     for type, pos_corr in config_list:
+        probe_pos_history = []
         save_figs = True
         scaling_dict = collections.defaultdict(lambda: 1.0, {236: 0.5, 239: 0.5, 240: 0.25, 241: 0.25, 242: 0.25, 250: 0.5, 251: 0.5, 252: 0.25, 253: 0.25})
         
@@ -93,7 +95,7 @@ for scan_idx in scan_indices:
                 probe_pos_list,
                 use_adaptive_moment=False,
                 use_position_regularization=True,
-                update_clipping=2,
+                update_magnitude_limit=2,
                 transform=tike.ptycho.position.AffineTransform()
             )
             
@@ -110,19 +112,30 @@ for scan_idx in scan_indices:
             ),
             position_options=position_options,
             algorithm_options=tike.ptycho.RpieOptions(
-                num_iter=128,
+                num_iter=128 if not record_intermediate_states else 1,
                 num_batch=7,
             ),
         )
         
         logging.basicConfig(level=logging.INFO)
-        
-        # returns an updated PtychoParameters object
-        result = tike.ptycho.reconstruct(
-            data=data,
-            parameters=parameters,
-            num_gpu=1
-        )
+
+        if record_intermediate_states:
+            for epoch in range(128):
+                parameters = tike.ptycho.reconstruct(
+                    data=data,
+                    parameters=parameters,
+                    num_gpu=1
+                )
+                current_probe_pos_list = parameters.scan
+                probe_pos_history.append(current_probe_pos_list)
+            result = parameters
+        else:
+            # returns an updated PtychoParameters object
+            result = tike.ptycho.reconstruct(
+                data=data,
+                parameters=parameters,
+                num_gpu=1
+            )
         
         fig = plt.figure()
         avg_cost = np.mean(np.stack(result.algorithm_options.costs, axis=0), axis=1)
@@ -166,6 +179,7 @@ for scan_idx in scan_indices:
         probe_pos_list_true -= np.mean(probe_pos_list_true, axis=0)
         probe_pos_list_refined -= np.mean(probe_pos_list_refined, axis=0)
         # probe_pos_list_raw *= 1.05
+        plt.figure()
         plt.scatter(probe_pos_list_calc[:, 1], probe_pos_list_calc[:, 0], s=1)
         plt.scatter(probe_pos_list_true[:, 1], probe_pos_list_true[:, 0], s=1)
         plt.scatter(probe_pos_list_refined[:, 1], probe_pos_list_refined[:, 0], s=1)
@@ -177,3 +191,15 @@ for scan_idx in scan_indices:
             plt.savefig('outputs/test{}/comparison_path_plot_true_calc_refined_clip_2_collective_iter_2_nn_12_sw_1e-3_1e-2.pdf'.format(scan_idx))
         elif not save_figs:
             plt.show()
+
+        # Plot probe position error history
+        if type != 'true' and pos_corr:
+            pos_error_history = []
+            for i_epoch, this_pos_list in enumerate(probe_pos_history):
+                this_pos_list = this_pos_list - np.mean(this_pos_list, axis=0)
+                pos_error_history.append(np.mean(np.sum((this_pos_list - probe_pos_list_true) ** 2, axis=1)))
+            if save_figs:
+                type_name = {'calculated': 'calc', 'true': 'true', 'baseline': 'baseline'}[type]
+                np.savetxt(os.path.join('outputs/test{}/pos_error_history_{}_pos_{}.txt'.format(
+                    scan_idx, type_name, pos_corr_str)),
+                    pos_error_history)
