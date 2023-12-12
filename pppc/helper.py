@@ -2,7 +2,8 @@ try:
     import pycuda.driver as cuda
     import tensorrt as trt
 except ImportError:
-    print('Unable to import pycuda and tensorrt. ')
+    print('Unable to import pycuda and tensorrt. If you do not intend to use the ONNX reconstructor, ignore '
+          'this message. ')
 from skimage.transform import resize
 import numpy as np
 

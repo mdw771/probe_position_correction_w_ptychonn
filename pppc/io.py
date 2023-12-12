@@ -123,7 +123,7 @@ class NPZFileHandle(DataFileHandle):
 
     def get_dp_by_consecutive_index(self, ind):
         if hasattr(ind, '__len__'):
-            return self.array[*ind, :, :]
+            return np.take(self.array, ind, axis=0)
         else:
             return self.array[ind, :, :]
 

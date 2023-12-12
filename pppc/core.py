@@ -306,6 +306,7 @@ class ProbePositionCorrectorChain:
         self.corrector_list = []
         self.multiiter_keys = []
         self.n_iters = 1
+        self.verbose = True
 
     def build(self):
         self.build_multiiter_entries()
@@ -329,10 +330,12 @@ class ProbePositionCorrectorChain:
     def run_correction_iteration(self, iter):
         logger.info('Now running iteration {}.'.format(iter))
         self.update_config_dict(iter)
-        print(self.config_dict)
+        if self.verbose:
+            print(self.config_dict)
         corrector = PtychoNNProbePositionCorrector(config_dict=self.config_dict)
         corrector.build()
-        corrector.orig_probe_positions.plot()
+        if self.verbose:
+            corrector.orig_probe_positions.plot()
         corrector.run()
         self.corrector_list.append(corrector)
 
