@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pppc"
+authors = [
+    {name = "Ming Du"},
+]
+description = "PtychoNN-based Ptychography Probe Position Correction"
+readme = "README.md"
+license = {file = "LICENSE.txt"}
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "scikit-learn",
+    "scikit-image",
+    "joblib",
+    "matplotlib",
+    "tqdm",
+    "tifffile",
+    "jupyter",
+    "ipywidgets",
+    "torch",
+    "torchvision",
+    "torchsummary",
+    "pandas"
+]
+version = "0.0.1"
+
+[tool.setuptools.packages]
+find = {}  # Scan the project directory with the default parameters
+
+

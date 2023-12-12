@@ -12,7 +12,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 from pppc.helper import engine_build_from_onnx, mem_allocation, inference, crop_center
-import pppc.configs
+from pppc.configs import InferenceConfigDict
 from pppc.ptychonn.model import PtychoNNModel
 from pppc.position_list import ProbePositionList
 from pppc.util import class_timeit
@@ -20,7 +20,7 @@ from pppc.io import *
 
 
 class Reconstructor:
-    def __init__(self, config_dict: pppc.configs.InferenceConfigDict):
+    def __init__(self, config_dict: InferenceConfigDict):
         """
         Inference engine for PtychoNN.
 
@@ -40,7 +40,7 @@ class Reconstructor:
 
 
 class VirtualReconstructor(Reconstructor):
-    def __init__(self, config_dict: pppc.configs.InferenceConfigDict):
+    def __init__(self, config_dict: InferenceConfigDict):
         super().__init__(config_dict)
         self.object_image_array = None
 
@@ -59,7 +59,7 @@ class VirtualReconstructor(Reconstructor):
 
 
 class PyTorchReconstructor(Reconstructor):
-    def __init__(self, config_dict: pppc.configs.InferenceConfigDict):
+    def __init__(self, config_dict: InferenceConfigDict):
         super().__init__(config_dict)
         self.model = None
 
@@ -104,7 +104,7 @@ class PyTorchReconstructor(Reconstructor):
 
 
 class ONNXTensorRTReconstructor(Reconstructor):
-    def __init__(self, config_dict: pppc.configs.InferenceConfigDict):
+    def __init__(self, config_dict: InferenceConfigDict):
         """
         Inference engine for PtychoNN.
 
@@ -151,7 +151,7 @@ class ONNXTensorRTReconstructor(Reconstructor):
 
 
 class DatasetInferencer:
-    def __init__(self, inference_dict: pppc.configs.InferenceConfigDict):
+    def __init__(self, inference_dict: InferenceConfigDict):
         self.config_dict = inference_dict
         self.dp_data_file_handle = None
         self.inference_batch_size = self.config_dict['batch_size']
@@ -198,7 +198,7 @@ class DatasetInferencer:
 
 class TileStitcher:
 
-    def __init__(self, config_dict: pppc.configs.InferenceConfigDict):
+    def __init__(self, config_dict: InferenceConfigDict):
         self.config_dict = config_dict
         self.images = None
         self.image_stitched = None
