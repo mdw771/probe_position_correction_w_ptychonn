@@ -66,7 +66,7 @@ class HDF5Dataset(Dataset):
 
     def resize_dp(self, dp, target_shape=(128, 128)):
         if not np.array_equal(dp.shape[-2:], target_shape):
-            return transform_data_for_ptychonn(dp, target_shape)
+            return transform_data_for_ptychonn(dp, target_shape, overflow_correction=True)
 
     def check_dataset(self):
         required_keys = ['data/real', 'data/reciprocal']

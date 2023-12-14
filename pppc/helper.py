@@ -69,7 +69,7 @@ def inference(context, h_input, h_output, d_input, d_output, stream):
     return h_output
 
 
-def transform_data_for_ptychonn(dp, target_shape, discard_len=None):
+def transform_data_for_ptychonn(dp, target_shape, discard_len=None, overflow_correction=False):
     """
     Throw away 1/8 of the boundary region, and resize DPs to match label size.
 
@@ -77,9 +77,13 @@ def transform_data_for_ptychonn(dp, target_shape, discard_len=None):
     :param target_shape: list[int]. The target shape.
     :param discard_len: tuple[int]. The length to discard on each side. If None, the length is default to 1/8 of the raw
                                     image size. If the numbers are negative, the images will be padded instead.
+    :param overflow_correction: bool. Whether to correct overflowing pixels, whose values wrap around to the negative
+                                side whn the true values surpass int16 limit.
     :return: np.ndarray.
     """
     dp = dp.astype(float)
+    if overflow_correction:
+        dp = correct_overflow(dp)
     if discard_len is None:
         discard_len = [dp.shape[i] // 8 for i in (-2, -1)]
     for i in (0, 1):
@@ -107,3 +111,11 @@ def crop_center(img, shape_to_keep=(64, 64)):
         slicer.append(slice(st, end))
     img = img[tuple(slicer)]
     return img
+
+def correct_overflow(arr):
+    mask = arr < 0
+    vals = arr[mask]
+    vals = 32768 + (vals - -32768)
+    arr[mask] = vals
+    # logger.info('{} overflowing values corrected.'.format(np.count_nonzero(mask)))
+    return arr
