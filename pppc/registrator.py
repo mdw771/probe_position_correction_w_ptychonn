@@ -295,7 +295,6 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
         # plt.title('After')
         # plt.show()
-
         affine_tform = self.estimate_affine_transform(matched_points_curr, matched_points_prev)
 
         # affine_tform = skimage.transform.estimate_transform('euclidean', matched_points_prev, matched_points_curr)

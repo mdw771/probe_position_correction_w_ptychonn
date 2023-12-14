@@ -28,13 +28,16 @@ def clean_data(arr):
 
 scan_indices = [234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
 # config_list = [('true', 0), ('baseline', 0), ('baseline', 1), ('calculated', 0), ('calculated', 1)]
-config_list = [('baseline', 1), ('calculated', 1)]
+config_list = [('baseline', 1), ('calculated', 0), ('calculated', 1)]
 record_intermediate_states = True
+save_figs = True
 
 for scan_idx in scan_indices:
     for type, pos_corr in config_list:
+        np.random.seed(196)
+        cupy.random.seed(196)
+
         probe_pos_history = []
-        save_figs = True
         scaling_dict = collections.defaultdict(lambda: 1.0, {236: 0.5, 239: 0.5, 240: 0.25, 241: 0.25, 242: 0.25, 250: 0.5, 251: 0.5, 252: 0.25, 253: 0.25})
         
         f = np.load('data/test{}.npz'.format(scan_idx))
@@ -93,7 +96,7 @@ for scan_idx in scan_indices:
         if pos_corr:
             position_options = tike.ptycho.PositionOptions(
                 probe_pos_list,
-                use_adaptive_moment=False,
+                use_adaptive_moment=True,
                 use_position_regularization=True,
                 update_magnitude_limit=2,
                 transform=tike.ptycho.position.AffineTransform()
@@ -193,7 +196,7 @@ for scan_idx in scan_indices:
             plt.show()
 
         # Plot probe position error history
-        if type != 'true' and pos_corr:
+        if type != 'true' and pos_corr and record_intermediate_states:
             pos_error_history = []
             for i_epoch, this_pos_list in enumerate(probe_pos_history):
                 this_pos_list = this_pos_list - np.mean(this_pos_list, axis=0)
