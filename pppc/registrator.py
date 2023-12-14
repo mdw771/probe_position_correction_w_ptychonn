@@ -195,7 +195,7 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
 
 
 class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
-    def __init__(self, *args, outlier_removal_method='kmeans', **kwargs):
+    def __init__(self, *args, outlier_removal_method='kmeans', initial_crop_ratio=1, **kwargs):
         """
         SIFT registration.
 
@@ -203,6 +203,7 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         """
         super().__init__(*args, **kwargs)
         self.outlier_removal_method = outlier_removal_method
+        self.initial_crop_ratio = initial_crop_ratio
 
     def find_keypoints(self, previous, current):
         feature_extractor = skimage.feature.SIFT()
@@ -221,10 +222,33 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         return matches, matched_points_prev, matched_points_curr
 
     def run(self, previous, current, *args, **kwargs):
-        self.status = self.status_dict['ok']
-        keypoints_prev, keypoints_curr, descriptors_prev, descriptors_curr = self.find_keypoints(previous, current)
-        matches, matched_points_prev, matched_points_curr = self.find_matches(keypoints_prev, keypoints_curr,
-                                                                              descriptors_prev, descriptors_curr)
+        matched_points_prev = []
+        matched_points_curr = []
+        if self.initial_crop_ratio < 1:
+            has_enough_matches = False
+            is_full_size = False
+            crop_len = [int(previous.shape[i] * (1 - self.initial_crop_ratio)) for i in range(2)]
+            cropped_previous = previous[crop_len[0]:-crop_len[0], crop_len[1]:-crop_len[1]]
+            cropped_current = current[crop_len[0]:-crop_len[0], crop_len[1]:-crop_len[1]]
+            while not has_enough_matches:
+                self.status = self.status_dict['ok']
+                keypoints_prev, keypoints_curr, descriptors_prev, descriptors_curr = self.find_keypoints(
+                    cropped_previous, cropped_current)
+                matches, matched_points_prev, matched_points_curr = self.find_matches(keypoints_prev, keypoints_curr,
+                                                                                      descriptors_prev, descriptors_curr)
+                if len(matches) < 2 and not is_full_size:
+                    logger.info('Could not find enough matches with crop ratio {}. Using full-sized images '
+                                'instead...'.format(self.initial_crop_ratio))
+                    cropped_previous = previous
+                    cropped_current = current
+                    is_full_size = True
+                else:
+                    has_enough_matches = True
+        else:
+            self.status = self.status_dict['ok']
+            keypoints_prev, keypoints_curr, descriptors_prev, descriptors_curr = self.find_keypoints(previous, current)
+            matches, matched_points_prev, matched_points_curr = self.find_matches(keypoints_prev, keypoints_curr,
+                                                                                  descriptors_prev, descriptors_curr)
 
         # fig, ax = plt.subplots(1, 1)
         # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
@@ -272,8 +296,18 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         # plt.title('After')
         # plt.show()
 
-        affine_tform = skimage.transform.estimate_transform('euclidean', matched_points_prev, matched_points_curr)
+        affine_tform = self.estimate_affine_transform(matched_points_curr, matched_points_prev)
+
+        # affine_tform = skimage.transform.estimate_transform('euclidean', matched_points_prev, matched_points_curr)
         return affine_tform
+
+    def estimate_affine_transform(self, matched_points_curr, matched_points_prev):
+        mat_curr = np.stack([matched_points_curr[:, 0], matched_points_curr[:, 1],
+                             np.ones(matched_points_curr.shape[0])], axis=1)
+        mat_prev = np.stack([matched_points_prev[:, 0], matched_points_prev[:, 1],
+                             np.ones(matched_points_prev.shape[0])], axis=1)
+        a_mat = np.linalg.pinv(mat_curr) @ mat_prev
+        return a_mat.T
 
     def find_majority_pairs(self, matched_points_prev, matched_points_curr,
                             prev_image=None, current_image=None, *args, **kwargs):
