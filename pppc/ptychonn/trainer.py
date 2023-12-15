@@ -7,7 +7,7 @@ import torch, torchvision
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from torchsummary import summary
+import torchinfo
 from torch.utils.data import Dataset, DataLoader, Subset
 
 from sklearn.utils import shuffle
@@ -51,6 +51,7 @@ class PtychoNNTrainer:
         self.loss_criterion = None
         self.iterations_per_epoch = 0
         self.current_epoch = 0
+        self.current_iteration = 0
         self.prediction_type = {'mag': True, 'phase': True}
 
         self.debug = self.config_dict['debug']
@@ -80,8 +81,8 @@ class PtychoNNTrainer:
         self.build_prediction_type()
         self.build_optimizer()
         self.build_scheduler()
+        self.build_loss_function()
 
-        self.loss_criterion = nn.L1Loss()
         self.initialize_metric_dict()
 
     def run_training(self):
@@ -109,6 +110,7 @@ class PtychoNNTrainer:
         loss_amp = 0.0
         loss_ph = 0.0
         n_batches = 0
+        self.current_iteration = 0
         for i, (ft_images, amps, phs) in enumerate(tqdm(self.training_dataloader, disable=(not self.verbose))):
             ft_images = ft_images.to(self.device)  # Move everything to device
             amps = amps.to(self.device)
@@ -117,8 +119,9 @@ class PtychoNNTrainer:
             pred_amps, pred_phs = self.model(ft_images)  # Forward pass
             pred_amps, pred_phs = self.post_process(pred_amps, pred_phs)
 
-            if self.debug:
-                self.plot_images([ft_images[0, 0], amps[0, 0], phs[0, 0], pred_amps[0, 0], pred_phs[0, 0]])
+            if self.debug and self.current_iteration % 100 == 0:
+                self.plot_images([ft_images[0, 0], amps[0, 0], phs[0, 0], pred_amps[0, 0], pred_phs[0, 0]],
+                                 name_list=['DP data', 'True amp', 'True phase', 'Pred amp', 'Pred phase'])
 
             # Compute losses
             # Monitor amplitude loss
@@ -141,6 +144,7 @@ class PtychoNNTrainer:
             self.metric_dict['lrs'].append(self.scheduler.get_last_lr())
 
             n_batches += 1
+            self.current_iteration += 1
         # Divide cumulative loss by number of batches-- sli inaccurate because last batch is different size
         self.metric_dict['losses'].append([tot_loss / n_batches,
                                            loss_amp / n_batches,
@@ -210,6 +214,12 @@ class PtychoNNTrainer:
                                                            max_lr=self.learning_rate, step_size_up=step_size,
                                                            cycle_momentum=False, mode='triangular2')
 
+    def build_loss_function(self):
+        if self.config_dict['loss_function'] is None:
+            self.loss_criterion = nn.L1Loss()
+        else:
+            self.loss_criterion = self.config_dict['loss_function']()
+
     def build_model(self):
         if self.config_dict['model'] is None:
             self.model = PtychoNNModel()
@@ -217,6 +227,15 @@ class PtychoNNTrainer:
             self.model = self.config_dict['model']
         elif isinstance(self.config_dict['model'], (tuple, list)):
             self.model = self.config_dict['model'][0](**self.config_dict['model'][1])
+
+        try:
+            torchinfo.summary(self.model, self.dataset.__getitem__(0)[0].shape, device='cpu')
+        except:
+            try:
+                torchinfo.summary(self.model, self.dataset.__getitem__(0)[0].shape[1:], device='cpu')
+            except:
+                logger.warning('Model summary could not be generated.')
+
         if self.device.type == 'cuda' and self.num_gpus > 1:
             self.model = nn.DataParallel(self.model)
             logger.info('Using DataParallel with {} devices.'.format(self.num_gpus))
@@ -285,18 +304,21 @@ class PtychoNNTrainer:
         plt.tight_layout()
         plt.xlabel("Epochs")
 
-    def plot_images(self, image_list):
-        fig, ax = plt.subplots(1, len(image_list))
+    def plot_images(self, image_list, name_list=None):
+        fig, ax = plt.subplots(1, len(image_list), figsize=(3 * len(image_list), 4))
         for i, img in enumerate(image_list):
             try:
-                ax[i].imshow(img)
+                im = ax[i].imshow(img)
             except TypeError:
                 try:
                     img = img.cpu().numpy()
-                    ax[i].imshow(img)
+                    im = ax[i].imshow(img)
                 except:
                     img = img.detach().cpu().numpy()
-                    ax[i].imshow(img)
+                    im = ax[i].imshow(img)
+            plt.colorbar(im)
+            if name_list is not None:
+                ax[i].set_title(name_list[i])
         plt.show()
 
     def run_testing(self, ind_list, dataset='train'):

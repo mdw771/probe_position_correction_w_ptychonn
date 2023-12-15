@@ -129,3 +129,4 @@ class PtychoNNTrainingConfigDict(TrainingConfigDict):
         self['num_lines_for_validation'] = 805  # Number of lines used for testing
         self['dataset'] = None  # A torch.Dataset object
         self['validation_ratio'] = 0.003  # Ratio of validation set out of the entire dataset
+        self['loss_function'] = None  # Can be None (default to L1Loss) or a Callable.

@@ -24,7 +24,7 @@ dependencies = [
     "ipywidgets",
     "torch",
     "torchvision",
-    "torchsummary",
+    "torchinfo",
     "pandas"
 ]
 version = "0.0.1"
