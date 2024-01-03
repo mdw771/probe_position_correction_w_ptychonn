@@ -34,8 +34,9 @@ def test_multiiter_pos_calculation():
 
     calc_pos_list = corrector_chain.corrector_list[-1].new_probe_positions.array
 
-    gold_pos_list = np.loadtxt(os.path.join('data_gold',
-                                            'calc_pos_235_collective_niters_2_beta_0p5_nn_12_sw_1e-2_1e-3.csv'))
+    gold_pos_list = np.genfromtxt(os.path.join('data_gold',
+                                               'calc_pos_235_collective_niters_2_beta_0p5_nn_12_sw_1e-2_1e-3.csv'),
+                                  delimiter=',')
     calc_pos_list -= np.mean(calc_pos_list, axis=0)
     gold_pos_list -= np.mean(gold_pos_list, axis=0)
     assert np.allclose(calc_pos_list, gold_pos_list, atol=1e-1)
