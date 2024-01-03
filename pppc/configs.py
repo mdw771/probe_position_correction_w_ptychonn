@@ -94,6 +94,10 @@ class InferenceConfigDict(ConfigDict):
         # Patch size used for image registration. If smaller than the reconstructed object size, a patch will
         # be cropped from the center.
         self['central_crop'] = None
+        # The length of the near-boundary region of the image. When doing SIFT registration, if a matching pair of
+        # keypoints involve points in this region, it will be discarded. However, if all matches (after outlier removal)
+        # are near-boundary, they are used as they are. This operation is less aggressive than `central_crop`.
+        self['sift_border_exclusion_length'] = 16
         # Method for correction. Can be 'serial' or 'collective'
         self['method'] = 'collective'
         self['max_shift'] = 7

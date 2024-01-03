@@ -145,7 +145,8 @@ class PtychoNNProbePositionCorrector:
         self.registrator = Registrator(method=self.config_dict['registration_method'],
                                        max_shift=self.config_dict['max_shift'],
                                        random_seed=self.config_dict['random_seed'],
-                                       outlier_removal_method=self.config_dict['sift_outlier_removal_method'])
+                                       outlier_removal_method=self.config_dict['sift_outlier_removal_method'],
+                                       boundary_exclusion_length=self.config_dict['sift_border_exclusion_length'])
 
     def run(self):
         if self.method == 'serial':
@@ -359,9 +360,8 @@ class ProbePositionCorrectorChain:
 
     def is_collective_result_good(self, corrector):
         calc_pos = corrector.new_probe_positions.array
-        abs_grad = np.abs(calc_pos[1:] - calc_pos[:-1])
-        if (np.count_nonzero(abs_grad[:, 0] > self.collective_mode_offset_tol) > 0 or
-                np.count_nonzero(abs_grad[:, 1] > self.collective_mode_offset_tol) > 0):
+        offset_len = np.sqrt(np.sum((calc_pos[1:] - calc_pos[:-1]) ** 2, axis=1))
+        if np.count_nonzero(offset_len > self.collective_mode_offset_tol):
             return False
         else:
             return True

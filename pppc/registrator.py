@@ -196,15 +196,20 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
 
 
 class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
-    def __init__(self, *args, outlier_removal_method='kmeans', initial_crop_ratio=1, **kwargs):
+    def __init__(self, *args, outlier_removal_method='kmeans', initial_crop_ratio=1, boundary_exclusion_length=16,
+                 **kwargs):
         """
         SIFT registration.
 
         :param outlier_removal_method: str. Can be 'trial_error', 'kmeans', 'isoforest', 'ransac'.
+        :param boundary_exclusion_length: int. The length of the near-boundary region of the image. When doing
+               SIFT registration, if a matching pair of keypoints involve points in this region, it will be discarded.
+               However, if all matches (after outlier removal) are near-boundary, they are used as they are.
         """
         super().__init__(*args, **kwargs)
         self.outlier_removal_method = outlier_removal_method
         self.initial_crop_ratio = initial_crop_ratio
+        self.boundary_exclusion_length = boundary_exclusion_length
 
     def find_keypoints(self, previous, current):
         feature_extractor = skimage.feature.SIFT(n_octaves=8, upsampling=1, n_scales=3, sigma_in=0.8, sigma_min=1.2)
@@ -266,7 +271,7 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         # Remove near-edge pairs. If all pairs are near-edge, just use them as they are.
         # matches_0 = copy.copy(matches)
         non_remote_inds, ss = self.find_non_remote_pairs(matched_points_prev, matched_points_curr, previous.shape,
-                                                         boundary_len=16)
+                                                         boundary_len=self.boundary_exclusion_length)
         matched_points_prev = matched_points_prev[non_remote_inds]
         matched_points_curr = matched_points_curr[non_remote_inds]
         matches = matches[non_remote_inds]
