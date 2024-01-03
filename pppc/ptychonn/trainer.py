@@ -430,6 +430,8 @@ class PtychoNNHyperparameterScanner:
             nv = v[0].__name__
             if len(v[1]) > 0:
                 nv += '_' + self.convert_dict_to_string(v[1])
+        elif issubclass(v, torch.nn.modules.loss._Loss):
+            nv = v.__name__
         else:
             nv = v
         return nv
