@@ -83,11 +83,14 @@ class InferenceConfigDict(ConfigDict):
         self['dp_data_file_path'] = None
         # Used as an alternative to `dp_data_file_path`. Should be a `DataFileHandle` object.
         self['dp_data_file_handle'] = None
-        # A ProbePositionList object. If None, `probe_position_data_path` must be provided.
+        # A ProbePositionList object used for finding nearest neighbors in collective mode.
+        # If None, `probe_position_data_path` must be provided.
         self['probe_position_list'] = None
         self['probe_position_data_path'] = None
         self['probe_position_data_unit'] = None
         self['pixel_size_nm'] = None
+        # Baseline positions. Used by ProbePositionCorrectorChain when the serial mode result is bad.
+        self['baseline_position_list'] = None
         # Patch size used for image registration. If smaller than the reconstructed object size, a patch will
         # be cropped from the center.
         self['central_crop'] = None

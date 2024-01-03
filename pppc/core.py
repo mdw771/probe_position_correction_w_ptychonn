@@ -116,9 +116,10 @@ class PtychoNNProbePositionCorrector:
         self.debug = self.config_dict['debug']
         self.registrator = None
         self.method = self.config_dict['method']
-        self.lmbda_collective = 1e-3
+        self.lmbda_collective = 1e-6
         self.a_mat = np.array([])
         self.b_vec = np.array([])
+        self.count_bad_offset = 0
 
     def build(self):
         if self.config_dict['random_seed'] is not None:
@@ -200,6 +201,7 @@ class PtychoNNProbePositionCorrector:
             offset = self.registrator.run(previous_obj, current_obj)
             if self.registrator.get_status() == self.registrator.get_status_code('drift'):
                 offset = offset_tracker.estimate()
+                self.count_bad_offset += 1
             if self.debug:
                 fig, ax = plt.subplots(1, 2)
                 ax[0].imshow(previous_obj)
@@ -252,6 +254,7 @@ class PtychoNNProbePositionCorrector:
                     print('Offset: {}'.format(offset))
                 # We want to be more strict with collective mode. If a result is less confident, just skip it.
                 if self.registrator.get_status() != self.registrator.get_status_code('ok'):
+                    self.count_bad_offset += 1
                     continue
                 else:
                     self.b_vec.append(np.array(offset))
@@ -306,7 +309,10 @@ class ProbePositionCorrectorChain:
         self.corrector_list = []
         self.multiiter_keys = []
         self.n_iters = 1
+        self.baseline_pos_list = config_dict['baseline_position_list']
+        self.collective_mode_offset_tol = 150
         self.verbose = True
+        self.redone_with_baseline = False
 
     def build(self):
         self.build_multiiter_entries()
@@ -337,18 +343,45 @@ class ProbePositionCorrectorChain:
         if self.verbose:
             corrector.orig_probe_positions.plot()
         corrector.run()
+        if self.config_dict['method'] == 'collective' and (not self.is_collective_result_good(corrector)):
+            # Redo iteration using baseline as initialization if result is bad
+            logger.info('The current iteration is using collective mode and the result is unreliable. Attempting to '
+                        'redo this iteration with baseline positions as initialization...')
+            if self.baseline_pos_list:
+                self.config_dict['probe_position_list'] = self.baseline_pos_list
+                corrector = PtychoNNProbePositionCorrector(config_dict=self.config_dict)
+                corrector.build()
+                corrector.run()
+                self.redone_with_baseline = True
+            else:
+                logger.info('Baseline position is unavailable.')
         self.corrector_list.append(corrector)
+
+    def is_collective_result_good(self, corrector):
+        calc_pos = corrector.new_probe_positions.array
+        abs_grad = np.abs(calc_pos[1:] - calc_pos[:-1])
+        if (np.count_nonzero(abs_grad[:, 0] > self.collective_mode_offset_tol) > 0 or
+                np.count_nonzero(abs_grad[:, 1] > self.collective_mode_offset_tol) > 0):
+            return False
+        else:
+            return True
 
     def get_ordinary_key_name(self, mikey):
         ind = mikey.find('_multiiter')
         return mikey[:ind]
 
-    def update_config_dict(self, iter):
+    def update_config_dict(self, iter, initialize_with_baseline=False):
         for mikey in self.multiiter_keys:
             key = self.get_ordinary_key_name(mikey)
             self.config_dict[key] = self.config_dict[mikey][iter]
         if iter > 0:
-            last_probe_pos_array = self.corrector_list[iter - 1].new_probe_positions.array
+            last_corrector = self.corrector_list[iter - 1]
+            last_probe_pos_array = last_corrector.new_probe_positions.array
             probe_pos_list = ProbePositionList(position_list=last_probe_pos_array)
+            if initialize_with_baseline:
+                if self.baseline_pos_list:
+                    probe_pos_list = self.baseline_pos_list
+                else:
+                    raise ValueError('Cannot initialize with baseline positions: baseline position list is None.')
             self.config_dict['probe_position_list'] = probe_pos_list
             logger.info('Using result from the last iteration to initialize probe position array...')
