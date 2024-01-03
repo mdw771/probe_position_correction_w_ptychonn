@@ -1,3 +1,4 @@
+import copy
 import warnings
 
 import numpy as np
@@ -206,7 +207,7 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         self.initial_crop_ratio = initial_crop_ratio
 
     def find_keypoints(self, previous, current):
-        feature_extractor = skimage.feature.SIFT()
+        feature_extractor = skimage.feature.SIFT(n_octaves=8, upsampling=1, n_scales=3, sigma_in=0.8, sigma_min=1.2)
         feature_extractor.detect_and_extract(previous)
         keypoints_prev = feature_extractor.keypoints
         descriptors_prev = feature_extractor.descriptors
@@ -262,6 +263,14 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         matched_points_curr = matched_points_curr[majority_inds]
         matches = matches[majority_inds]
 
+        # Remove near-edge pairs. If all pairs are near-edge, just use them as they are.
+        # matches_0 = copy.copy(matches)
+        non_remote_inds, ss = self.find_non_remote_pairs(matched_points_prev, matched_points_curr, previous.shape,
+                                                         boundary_len=16)
+        matched_points_prev = matched_points_prev[non_remote_inds]
+        matched_points_curr = matched_points_curr[non_remote_inds]
+        matches = matches[non_remote_inds]
+
         # Just calculate the averaged offset since we only want translation
         offset = np.mean(matched_points_prev - matched_points_curr, axis=0)
 
@@ -271,6 +280,17 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
         # plt.title('After')
         # plt.show()
+
+        # if ss:
+        #     fig, ax = plt.subplots(1, 1)
+        #     skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches_0)
+        #     plt.title('Before')
+        #     plt.show()
+        #     fig, ax = plt.subplots(1, 1)
+        #     skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
+        #     plt.title('After')
+        #     plt.show()
+
 
         return offset
 
@@ -307,7 +327,31 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
                              np.ones(matched_points_prev.shape[0])], axis=1)
         a_mat = np.linalg.pinv(mat_curr) @ mat_prev
         return a_mat.T
-
+    
+    def find_non_remote_pairs(self, matched_points_prev, matched_points_curr, image_shape, boundary_len=10):
+        status = False
+        mask_in_prev_y = np.logical_and(matched_points_prev[:, 0] > boundary_len,
+                                        matched_points_prev[:, 0] < (image_shape[0] - boundary_len))
+        mask_in_prev_x = np.logical_and(matched_points_prev[:, 1] > boundary_len,
+                                        matched_points_prev[:, 1] < (image_shape[1] - boundary_len))
+        mask_in_curr_y = np.logical_and(matched_points_curr[:, 0] > boundary_len,
+                                        matched_points_curr[:, 0] < (image_shape[0] - boundary_len))
+        mask_in_curr_x = np.logical_and(matched_points_curr[:, 1] > boundary_len,
+                                        matched_points_curr[:, 1] < (image_shape[1] - boundary_len))
+        mask_final = np.logical_and(
+            np.logical_and(
+                np.logical_and(mask_in_curr_x, mask_in_prev_x),
+                mask_in_curr_y),
+            mask_in_prev_y
+        )
+        inds = np.where(mask_final)[0]
+        if len(inds) == 0:
+            inds = np.arange(len(matched_points_prev)).astype('int')
+        else:
+            if len(matched_points_prev) > len(inds):
+                status = True
+        return inds, status
+        
     def find_majority_pairs(self, matched_points_prev, matched_points_curr,
                             prev_image=None, current_image=None, *args, **kwargs):
         if self.outlier_removal_method == 'kmeans':
