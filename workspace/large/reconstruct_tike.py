@@ -31,6 +31,7 @@ class TikeReconstruction:
         self.record_intermediate_states = record_intermediate_states
         self.probe_pos_history = []
         self.pos_error_history = []
+        self.pos_grad_error_history = []
         self.recon_error_history = []
         self.scaling_dict = collections.defaultdict(lambda: 1.0,
                                                     {236: 0.5, 239: 0.5, 240: 0.25, 241: 0.25, 242: 0.25, 250: 0.5,
@@ -55,6 +56,7 @@ class TikeReconstruction:
         self.build_data()
         self.build_options()
         self.build_parameters()
+        self.build_strings()
         logging.basicConfig(level=logging.INFO)
 
     def build_data(self):
@@ -139,7 +141,7 @@ class TikeReconstruction:
         )
 
     def build_strings(self):
-        self.pos_corr_str = 'posCorr_1_clip_2' if self.pos_corr else 'posCorr_0'
+        self.pos_corr_str = 'posCorr_1_clip_2' if self.do_pos_corr else 'posCorr_0'
 
 
     def run(self):
@@ -170,7 +172,8 @@ class TikeReconstruction:
         self.plot_loss()
         self.plot_reconstruction()
         self.plot_path_comparison()
-        self.plot_probe_position_error_history()
+        # self.plot_probe_position_error_history()
+        self.plot_probe_position_grad_error_history()
         # self.plot_reconstruction_error_history()
 
     def plot_loss(self):
@@ -245,6 +248,18 @@ class TikeReconstruction:
         elif not self.save_figs:
             plt.show()
 
+    def plot_probe_position_grad_error_history(self):
+        if self.type != 'true' and self.do_pos_corr and self.record_intermediate_states:
+            self.pos_grad_error_history = []
+            probe_pos_list_true = self.get_true_positions()
+            for i_epoch, this_pos_list in enumerate(self.probe_pos_history):
+                self.pos_grad_error_history.append(self.calculate_pos_grad_error(this_pos_list, probe_pos_list_true))
+            if self.save_figs:
+                type_name = self.output_type_name_mapping[type]
+                np.savetxt(os.path.join('outputs/test{}/pos_grad_error_history_{}_pos_{}.txt'.format(
+                    self.scan_idx, type_name, self.pos_corr_str)),
+                    self.pos_grad_error_history)
+
     def plot_probe_position_error_history(self):
         if self.type != 'true' and self.do_pos_corr and self.record_intermediate_states:
             self.pos_error_history = []
@@ -297,17 +312,24 @@ class TikeReconstruction:
     def calculate_recon_error(obj_recon, obj_true, mask):
         return np.mean((obj_recon[mask] - obj_true[mask]) ** 2)
 
-# scan_indices = [234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
-scan_indices = [253]
-# config_list = [('true', 0), ('baseline', 0), ('baseline', 1), ('calculated', 0), ('calculated', 1)]
-config_list = [('calculated', 1)]
+    @staticmethod
+    def calculate_pos_grad_error(pos1, pos2):
+        g1 = pos1[1:] - pos1[:-1]
+        g2 = pos2[1:] - pos2[:-1]
+        g_mse = np.mean(np.sum((g2 - g1) ** 2, axis=1))
+        return g_mse
+
+scan_indices = [233]#, 234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
+# scan_indices = [253]
+config_list = [('true', 0), ('baseline', 0), ('baseline', 1), ('calculated', 0), ('calculated', 1)]
+# config_list = [('calculated', 0)]
 
 for scan_idx in scan_indices:
     for type, pos_corr in config_list:
         reconstructor = TikeReconstruction(scan_idx=scan_idx,
                                            type=type,
                                            do_pos_corr=bool(pos_corr),
-                                           save_figs=False,
+                                           save_figs=True,
                                            record_intermediate_states=True)
         reconstructor.build()
         reconstructor.run()
