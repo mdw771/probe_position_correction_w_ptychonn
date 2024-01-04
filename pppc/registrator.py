@@ -20,7 +20,8 @@ class Registrator:
         self.random_seed = random_seed
         self.algorithm_dict = {'error_map': ErrorMapRegistrationAlgorithm,
                                'phase_correlation': PhaseCorrelationRegistrationAlgorithm,
-                               'sift': SIFTRegistrationAlgorithm}
+                               'sift': SIFTRegistrationAlgorithm,
+                               'hybrid': HybridRegistrationAlgorithm}
         self.algorithm = self.algorithm_dict[method](max_shift=self.max_shift, **kwargs)
         self.algorithm.random_seed = self.random_seed
 
@@ -44,34 +45,96 @@ class Registrator:
 
 
 class RegistrationAlgorithm:
-    def __init__(self, *args, **kwargs):
-        self.status_dict = {'ok': 0, 'bad_fit': 1, 'drift': 2}
+    def __init__(self, tol=0.3, *args, **kwargs):
+        self.status_dict = {'ok': 0, 'questionable': 1, 'bad': 2}
         self.status = 0
         self.random_seed = 123
+        self.tol = tol
+        self.debug = False
 
     def run(self, previous, current, *args, **kwargs):
         pass
 
-    def check_offset_quality(self, prev, curr, offset, update_status=True):
+    def check_offset_quality(self, prev, curr, offset, update_status=True, tol=0.3):
         image_offset = -offset
         prev_shifted = np.fft.ifft2(ndi.fourier_shift(np.fft.fft2(prev), image_offset)).real
 
+        sy, sx, ey, ex = self.calculate_metric_region_for_shifted_image(offset, prev.shape)
+        error = np.mean((prev_shifted[sy:ey, sx:ex] - curr[sy:ey, sx:ex]) ** 2)
+        if error > tol and update_status:
+            logger.info('Large error after applying offset ({}).'.format(error))
+            self.status = self.status_dict['bad']
+            # fig, ax = plt.subplots(1, 5, figsize=(13, 3))
+            # ax[0].imshow(prev); ax[0].grid('both')
+            # ax[1].imshow(curr); ax[1].grid('both')
+            # ax[2].imshow(prev_shifted); ax[2].grid('both')
+            # ax[3].imshow(prev_shifted - curr); ax[3].grid('both')
+            # if isinstance(self, ErrorMapRegistrationAlgorithm):
+            #     ax[4].imshow(self.error_map)
+            # plt.suptitle('{} {}'.format(str(self), offset))
+            # plt.tight_layout()
+            # plt.show()
+        else:
+            # There should be enough variance in the analysis region for the result to be reliable.
+            std_roi = np.std(curr[sy:ey, sx:ex])
+            if std_roi < 0.2:
+                logger.info('Error is low ({}) but variance is also low within the ROI ({}).'.format(error, std_roi))
+                self.status = self.status_dict['questionable']
+                fig, ax = plt.subplots(1, 2, figsize=(8, 4))
+                ax[0].imshow(prev_shifted[sy:ey, sx:ex])
+                ax[1].imshow(curr[sy:ey, sx:ex])
+                plt.show()
+                print(np.std(curr[sy:ey, sx:ex]))
+                print(offset)
+        return error
+
+    def calculate_metric_region_for_shifted_image(self, offset, image_shape):
+        image_offset = -np.array(offset)
         sy, sx = 0, 0
-        ey, ex = prev.shape
+        ey, ex = image_shape
         if image_offset[0] > 0:
             sy = int(np.ceil(image_offset[0]))
         elif image_offset[0] < 0:
-            ey = prev.shape[0] - int(np.ceil(-image_offset[0]))
+            ey = image_shape[0] - int(np.ceil(-image_offset[0]))
         if image_offset[1] > 0:
             sx = int(np.ceil(image_offset[1]))
         elif image_offset[1] < 0:
-            ex = prev.shape[1] - int(np.ceil(-image_offset[1]))
-        error = np.mean((prev_shifted[sy:ey, sx:ex] - curr[sy:ey, sx:ex]) ** 2)
-        if error > 0.3 and update_status:
-            logger.info('Large error after applying offset ({}).'.format(error))
-            self.status = self.status_dict['drift']
-        return error
+            ex = image_shape[1] - int(np.ceil(-image_offset[1]))
+        return sy, sx, ey, ex
 
+class HybridRegistrationAlgorithm(RegistrationAlgorithm):
+    def __init__(self, algs=('error_map_multilevel', 'error_map_expandable', 'sift'), tols=(0.08, 0.3, 0.3),
+                 max_shift=7, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.alg_list = []
+        self.alg_names = algs
+        for i, alg in enumerate(algs):
+            if alg == 'error_map_multilevel':
+                self.alg_list.append(
+                    ErrorMapRegistrationAlgorithm(subpixel=False, max_shift=max_shift, n_levels=3, tol=tols[i]))
+            elif alg == 'error_map_expandable':
+                self.alg_list.append(
+                    ErrorMapRegistrationAlgorithm(subpixel=False, max_shift=max_shift, n_levels=1, tol=tols[i]))
+            elif alg == 'sift':
+                self.alg_list.append(
+                    SIFTRegistrationAlgorithm(outlier_removal_method='trial_error', boundary_exclusion_length=16,
+                                              tol=tols[i]))
+
+    def run(self, previous, current, *args, **kwargs):
+        offset = None
+        for i in range(len(self.alg_list)):
+            offset = self.alg_list[i].run(previous, current, *args, **kwargs)
+            self.status = self.alg_list[i].status
+            if self.status == self.status_dict['ok']:
+                return offset
+            if i < len(self.alg_list) - 1:
+                logger.info('Switching to {}...'.format(self.alg_names[i + 1]))
+        return offset
+        ###
+        # self.error_map_alg.debug = True
+        # self.error_map_alg.run(previous, current, *args, **kwargs)
+        # self.error_map_alg.debug = False
+        ###
 
 class PhaseCorrelationRegistrationAlgorithm(RegistrationAlgorithm):
     def __init__(self, *args, **kwargs):
@@ -87,19 +150,62 @@ class PhaseCorrelationRegistrationAlgorithm(RegistrationAlgorithm):
 
 
 class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
-    def __init__(self, max_shift=7, *args, **kwargs):
+    def __init__(self, max_shift=7, subpixel=True, n_levels=1, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_shift = max_shift
         self.starting_max_shift = min(self.max_shift, 30)
+        self.max_shift_multilevel = 40
         self.drift_threshold = 60
+        self.subpixel = subpixel
+        self.error_map = None
+        self.n_levels = n_levels
 
     def run(self, previous, current, *args, **kwargs):
+        if self.n_levels == 1:
+            return self.run_expandable(previous, current, *args, **kwargs)
+        else:
+            return self.run_multilevel(previous, current, *args, **kwargs)
+
+    def run_multilevel(self, previous, current, *args, **kwargs):
         self.status = self.status_dict['ok']
+        offset = None
+        last_level_offset = None
+        for level in range(self.n_levels, 0, -1):
+            level_scaler = 2 ** (level - 1)
+            if level > 1:
+                level_previous = ndi.zoom(previous, 1. / level_scaler)
+                level_current = ndi.zoom(current, 1. / level_scaler)
+            else:
+                level_previous = previous
+                level_current = current
+            current_max_shift = self.max_shift_multilevel // level_scaler
+            if level == self.n_levels:
+                offset, coeffs, min_error = self.run_with_current_max_shift(level_previous, level_current,
+                                                                            current_max_shift)
+            else:
+                y_range = np.clip(
+                    [np.round(-last_level_offset[0] * 2) - 4, np.round(-last_level_offset[0] * 2) + 4],
+                    a_min=-current_max_shift, a_max=current_max_shift).astype(int)
+                x_range = np.clip(
+                    [np.round(-last_level_offset[1] * 2) - 4, np.round(-last_level_offset[1] * 2) + 4],
+                    a_min=-current_max_shift, a_max=current_max_shift).astype(int)
+                offset, coeffs, min_error = self.run_with_current_max_shift(level_previous, level_current,
+                                                                            y_range=y_range, x_range=x_range)
+            self.check_fitting_result(coeffs, min_error)
+            last_level_offset = offset
+        self.check_offset(offset)
+        self.check_offset_quality(previous, current, offset, tol=self.tol)
+        return offset
+
+    def run_expandable(self, previous, current, *args, **kwargs):
+        self.status = self.status_dict['ok']
+        offset = None
         current_max_shift = self.starting_max_shift
         offset = [np.inf, np.inf]
-        while (self.status in [self.status_dict['ok'], self.status_dict['bad_fit']] and
+        while (self.status in [self.status_dict['ok'], self.status_dict['questionable']] and
                current_max_shift <= self.max_shift):
-            offset, coeffs, min_error = self.run_with_current_max_shift(previous, current, current_max_shift)
+            offset, coeffs, min_error = self.run_with_current_max_shift(previous, current,
+                                                                        current_max_shift)
             self.check_fitting_result(coeffs, min_error)
             if self.status == self.status_dict['ok']:
                 break
@@ -107,44 +213,85 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
                 current_max_shift += 10
             else:
                 current_max_shift = min(current_max_shift + 10, self.max_shift)
-                logger.info('Result failed quality check, so I am increasing max shift to {}. (offset = {}, a = {}, '
-                            'b = {}, min_error = {})'.format(current_max_shift, offset, *coeffs[:2], min_error))
+                if self.subpixel:
+                    logger.info(
+                        'Result failed quality check, so I am increasing max shift to {}. (offset = {}, a = {}, '
+                        'b = {}, min_error = {})'.format(current_max_shift, offset, *coeffs[:2], min_error))
+                else:
+                    logger.info('Result failed quality check, so I am increasing max shift to {}. (offset = {}, '
+                                'min_error = {})'.format(current_max_shift, offset, min_error))
         self.check_offset(offset)
-        if self.status == self.status_dict['drift']:
-            logger.info('Offset magnitude is very large ({}), which might be unreliable. '.format(offset))
+        self.check_offset_quality(previous, current, offset, tol=self.tol)
         return offset
 
-    def run_with_current_max_shift(self, previous, current, max_shift):
-        result_table = np.zeros([(2 * max_shift + 1) ** 2, 3])
+    def run_with_current_max_shift(self, previous, current, max_shift=None, y_range=None, x_range=None):
+        if max_shift is not None:
+            y_range = [-max_shift, max_shift]
+            x_range = [-max_shift, max_shift]
+        len_range = [y_range[1] - y_range[0] + 1, x_range[1] - x_range[0] + 1]
+        result_table = np.zeros([len_range[0] * len_range[1], 3])
+        self.error_map = np.zeros(len_range)
+
+        # Calculate the range within which error is to be calculated.
+        sy = max(self.calculate_metric_region_for_shifted_image([y_range[0], 0], previous.shape)[0],
+                 self.calculate_metric_region_for_shifted_image([y_range[1], 0], previous.shape)[0])
+        sx = max(self.calculate_metric_region_for_shifted_image([0, x_range[0]], previous.shape)[1],
+                 self.calculate_metric_region_for_shifted_image([0, x_range[1]], previous.shape)[1])
+        ey = min(self.calculate_metric_region_for_shifted_image([y_range[0], 0], previous.shape)[2],
+                 self.calculate_metric_region_for_shifted_image([y_range[1], 0], previous.shape)[2])
+        ex = min(self.calculate_metric_region_for_shifted_image([0, x_range[0]], previous.shape)[3],
+                 self.calculate_metric_region_for_shifted_image([0, x_range[1]], previous.shape)[3])
+
         i = 0
-        for dy in range(-max_shift, max_shift + 1):
-            for dx in range(-max_shift, max_shift + 1):
+        for dy in range(y_range[0], y_range[1] + 1):
+            for dx in range(x_range[0], x_range[1] + 1):
                 previous_r = np.roll(np.roll(previous, dy, axis=0), dx, axis=1)
-                im1 = previous_r[max_shift:-max_shift, max_shift:-max_shift]
-                im2 = current[max_shift:-max_shift, max_shift:-max_shift]
-                # result_table[i] = dy, dx, skimage.metrics.structural_similarity(im1, im2, data_range=6.28)
-                result_table[i] = dy, dx, skimage.metrics.mean_squared_error(im1, im2)
+                im1 = previous_r[sy:ey, sx:ex]
+                im2 = current[sy:ey, sx:ex]
+                err = skimage.metrics.mean_squared_error(im1, im2)
+                # err = skimage.metrics.structural_similarity(im1, im2, data_range=6.28)
+                result_table[i] = dy, dx, err
+                self.error_map[dy - y_range[0], dx - x_range[0]] = err
                 i += 1
         result_table = np.stack(result_table)
         min_error = np.min(result_table[:, 2])
-        offset, coeffs = self.__class__._fit_quadratic_peak_in_error_map(result_table, return_coeffs=True)
-        # Probe position offset is opposite to image offset.
-        offset = -np.array(offset)
-        return offset, coeffs, min_error
+        if self.subpixel:
+            offset, coeffs = self.__class__._fit_quadratic_peak_in_error_map(result_table, return_coeffs=True)
+            # Probe position offset is opposite to image offset.
+            offset = -np.array(offset)
+            return offset, coeffs, min_error
+        else:
+            i_min_error = np.argmin(result_table[:, 2])
+            offset = result_table[i_min_error, :2]
+            offset = -np.array(offset)
+
+            if self.debug:
+                print(offset)
+                fig, ax = plt.subplots(1, 4, figsize=(11, 3))
+                ax[0].imshow(previous); ax[0].grid('both')
+                ax[1].imshow(current); ax[1].grid('both')
+                ax[2].imshow(np.roll(np.roll(previous, -int(offset[0]), axis=0), -int(offset[1]), axis=1)); ax[2].grid('both')
+                ax[3].imshow(self.error_map); ax[3].grid('both')
+                plt.tight_layout()
+                plt.show()
+
+            return offset, None, min_error
 
     def check_fitting_result(self, coeffs, min_error):
-        a, b = coeffs[:2]
-        if a < 1e-3 or b < 1e-3:
-            self.status = self.status_dict['bad_fit']
-            return
+        if self.subpixel:
+            a, b = coeffs[:2]
+            if a < 1e-3 or b < 1e-3:
+                self.status = self.status_dict['questionable']
+                return
         if min_error > 0.3:
-            self.status = self.status_dict['bad_fit']
+            self.status = self.status_dict['questionable']
             return
         self.status = self.status_dict['ok']
 
     def check_offset(self, offset):
         if np.count_nonzero(abs(np.array(offset)) > self.drift_threshold):
-            self.status = self.status_dict['drift']
+            self.status = self.status_dict['bad']
+            logger.info('Offset magnitude is very large ({}), which might be unreliable. '.format(offset))
         else:
             self.status = self.status_dict['ok']
 
@@ -286,7 +433,7 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         offset = np.mean(matched_points_prev - matched_points_curr, axis=0)
 
         # self.check_clustering_quality(outlier_removal_result)
-        self.check_offset_quality(previous, current, offset)
+        self.check_offset_quality(previous, current, offset, tol=self.tol)
         # fig, ax = plt.subplots(1, 1)
         # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
         # plt.title('After')
@@ -400,7 +547,7 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         majority_inds = np.where(res == 1)[0]
         if len(majority_inds) == 0:
             majority_inds = list(range(shift_vectors.shape[0]))
-            self.status = self.status_dict['bad_fit']
+            self.status = self.status_dict['questionable']
         return majority_inds, res
 
     def find_majority_pairs_kmeans(self, matched_points_prev, matched_points_curr):
@@ -443,6 +590,7 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
                 good_inds = []
         if len(good_inds) == 0:
             logger.info('Trial-error did not return any good candidates, thus switching to KMeans.')
+            self.status = self.status_dict['questionable']
             good_inds, res = self.find_majority_pairs_kmeans(matched_points_prev, matched_points_curr)
         return good_inds, error_list
 
@@ -478,11 +626,11 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         labels, counts = np.unique(kmeans_result.labels_, return_counts=True)
         counts = np.sort(counts)
         if len(counts) > 1 and (counts[-1] - counts[-2]) / counts[-2] < 0.3:
-            self.status = self.status_dict['bad_fit']
+            self.status = self.status_dict['questionable']
             logger.info('Non-dominating majority cluster: {} vs {}'.format(counts[-1], counts[-2]))
             return
         if counts[-1] < 4:
-            self.status = self.status_dict['bad_fit']
+            self.status = self.status_dict['questionable']
             logger.info('Too few majority matches ({}).'.format(counts[-1]))
             return
 

@@ -147,7 +147,9 @@ class PtychoNNProbePositionCorrector:
                                        random_seed=self.config_dict['random_seed'],
                                        outlier_removal_method=self.config_dict['sift_outlier_removal_method'],
                                        boundary_exclusion_length=self.config_dict['sift_border_exclusion_length'],
-                                       downsample=self.config_dict['registration_downsample'])
+                                       downsample=self.config_dict['registration_downsample'],
+                                       algs=self.config_dict['hybrid_registration_algs'],
+                                       tols=self.config_dict['hybrid_registration_tols'])
 
     def run(self):
         if self.method == 'serial':
@@ -201,7 +203,7 @@ class PtychoNNProbePositionCorrector:
         for ind in trange(1, self.n_dps):
             current_obj = self.reconstruct_dp(ind)[1][0]
             offset = self.registrator.run(previous_obj, current_obj)
-            if self.registrator.get_status() == self.registrator.get_status_code('drift'):
+            if self.registrator.get_status() == self.registrator.get_status_code('bad'):
                 offset = offset_tracker.estimate()
                 self.count_bad_offset += 1
             if self.debug:

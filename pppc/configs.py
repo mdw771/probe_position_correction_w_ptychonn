@@ -84,6 +84,10 @@ class InferenceConfigDict(ConfigDict):
         self['sift_border_exclusion_length'] = 16
         # Image downsampling before registration.
         self['registration_downsample'] = 1
+        # Hybrid registration algorithms
+        self['hybrid_registration_algs'] = ['error_map_multilevel', 'error_map_expandable', 'sift']
+        # Hybrid registration tolerances
+        self['hybrid_registration_tols'] = [0.15, 0.3, 0.3]
 
         # ===== General configs =====
         self['dp_data_file_path'] = None
