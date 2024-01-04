@@ -197,7 +197,7 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
 
 class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
     def __init__(self, *args, outlier_removal_method='kmeans', initial_crop_ratio=1, boundary_exclusion_length=16,
-                 **kwargs):
+                 downsample=1, **kwargs):
         """
         SIFT registration.
 
@@ -205,11 +205,13 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         :param boundary_exclusion_length: int. The length of the near-boundary region of the image. When doing
                SIFT registration, if a matching pair of keypoints involve points in this region, it will be discarded.
                However, if all matches (after outlier removal) are near-boundary, they are used as they are.
+        :param downsample: int. Downsampling ratio.
         """
         super().__init__(*args, **kwargs)
         self.outlier_removal_method = outlier_removal_method
         self.initial_crop_ratio = initial_crop_ratio
         self.boundary_exclusion_length = boundary_exclusion_length
+        self.downsample = downsample
 
     def find_keypoints(self, previous, current):
         feature_extractor = skimage.feature.SIFT(n_octaves=8, upsampling=1, n_scales=3, sigma_in=0.8, sigma_min=1.2)
@@ -228,8 +230,12 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         return matches, matched_points_prev, matched_points_curr
 
     def run(self, previous, current, *args, **kwargs):
+        if self.downsample > 1:
+            previous = ndi.zoom(previous, 1. / self.downsample)
+            current = ndi.zoom(current, 1. / self.downsample)
         matched_points_prev = []
         matched_points_curr = []
+        matches = []
         if self.initial_crop_ratio < 1:
             has_enough_matches = False
             is_full_size = False
@@ -296,6 +302,8 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         #     plt.title('After')
         #     plt.show()
 
+        if self.downsample > 1:
+            offset = offset * self.downsample
 
         return offset
 
@@ -316,11 +324,15 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         matched_points_curr = matched_points_curr[majority_inds]
         matches = matches[majority_inds]
 
-        # fig, ax = plt.subplots(1, 1)
-        # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
-        # plt.title('After')
-        # plt.show()
         affine_tform = self.estimate_affine_transform(matched_points_curr, matched_points_prev)
+
+        # if np.abs(affine_tform[1, 2]) > 5:
+        #     print(affine_tform)
+        #     print(np.mean(matched_points_prev - matched_points_curr, axis=0))
+        #     fig, ax = plt.subplots(1, 1)
+        #     skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
+        #     plt.title('After')
+        #     plt.show()
 
         # affine_tform = skimage.transform.estimate_transform('euclidean', matched_points_prev, matched_points_curr)
         return affine_tform

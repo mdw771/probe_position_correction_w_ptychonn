@@ -146,7 +146,8 @@ class PtychoNNProbePositionCorrector:
                                        max_shift=self.config_dict['max_shift'],
                                        random_seed=self.config_dict['random_seed'],
                                        outlier_removal_method=self.config_dict['sift_outlier_removal_method'],
-                                       boundary_exclusion_length=self.config_dict['sift_border_exclusion_length'])
+                                       boundary_exclusion_length=self.config_dict['sift_border_exclusion_length'],
+                                       downsample=self.config_dict['registration_downsample'])
 
     def run(self):
         if self.method == 'serial':

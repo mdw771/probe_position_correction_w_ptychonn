@@ -78,6 +78,12 @@ class InferenceConfigDict(ConfigDict):
         self['registration_method'] = 'error_map'
         # Method for detecting outlier matches for SIFT. Can be "trial_error", "kmeans", "isoforest", "ransac".
         self['sift_outlier_removal_method'] = 'kmeans'
+        # The length of the near-boundary region of the image. When doing SIFT registration, if a matching pair of
+        # keypoints involve points in this region, it will be discarded. However, if all matches (after outlier removal)
+        # are near-boundary, they are used as they are. This operation is less aggressive than `central_crop`.
+        self['sift_border_exclusion_length'] = 16
+        # Image downsampling before registration.
+        self['registration_downsample'] = 1
 
         # ===== General configs =====
         self['dp_data_file_path'] = None
@@ -94,10 +100,6 @@ class InferenceConfigDict(ConfigDict):
         # Patch size used for image registration. If smaller than the reconstructed object size, a patch will
         # be cropped from the center.
         self['central_crop'] = None
-        # The length of the near-boundary region of the image. When doing SIFT registration, if a matching pair of
-        # keypoints involve points in this region, it will be discarded. However, if all matches (after outlier removal)
-        # are near-boundary, they are used as they are. This operation is less aggressive than `central_crop`.
-        self['sift_border_exclusion_length'] = 16
         # Method for correction. Can be 'serial' or 'collective'
         self['method'] = 'collective'
         self['max_shift'] = 7
