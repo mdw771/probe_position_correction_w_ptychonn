@@ -150,11 +150,10 @@ class PhaseCorrelationRegistrationAlgorithm(RegistrationAlgorithm):
 
 
 class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
-    def __init__(self, max_shift=7, subpixel=True, n_levels=1, *args, **kwargs):
+    def __init__(self, max_shift=7, subpixel=True, n_levels=1, starting_max_shift=30, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_shift = max_shift
-        self.starting_max_shift = min(self.max_shift, 30)
-        self.max_shift_multilevel = 40
+        self.starting_max_shift = min(self.max_shift, starting_max_shift)
         self.drift_threshold = 60
         self.subpixel = subpixel
         self.error_map = None
@@ -170,31 +169,42 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
         self.status = self.status_dict['ok']
         offset = None
         last_level_offset = None
-        for level in range(self.n_levels, 0, -1):
-            level_scaler = 2 ** (level - 1)
-            if level > 1:
-                level_previous = ndi.zoom(previous, 1. / level_scaler)
-                level_current = ndi.zoom(current, 1. / level_scaler)
+        finish = False
+        current_max_shift = self.starting_max_shift
+        while not finish:
+            for level in range(self.n_levels, 0, -1):
+                level_scaler = 2 ** (level - 1)
+                if level > 1:
+                    level_previous = ndi.zoom(previous, 1. / level_scaler)
+                    level_current = ndi.zoom(current, 1. / level_scaler)
+                else:
+                    level_previous = previous
+                    level_current = current
+                current_level_max_shift = current_max_shift // level_scaler
+                if level == self.n_levels:
+                    offset, coeffs, min_error = self.run_with_current_max_shift(level_previous, level_current,
+                                                                                current_level_max_shift)
+                else:
+                    y_range = np.clip(
+                        [np.round(-last_level_offset[0] * 2) - 4, np.round(-last_level_offset[0] * 2) + 4],
+                        a_min=-current_level_max_shift, a_max=current_level_max_shift).astype(int)
+                    x_range = np.clip(
+                        [np.round(-last_level_offset[1] * 2) - 4, np.round(-last_level_offset[1] * 2) + 4],
+                        a_min=-current_level_max_shift, a_max=current_level_max_shift).astype(int)
+                    offset, coeffs, min_error = self.run_with_current_max_shift(level_previous, level_current,
+                                                                                y_range=y_range, x_range=x_range)
+                self.check_fitting_result(coeffs, min_error)
+                last_level_offset = offset
+            self.check_offset(offset)
+            self.check_offset_quality(previous, current, offset, tol=self.tol)
+            if self.status == self.status_dict['ok'] or current_max_shift + 10 > self.max_shift:
+                finish = True
             else:
-                level_previous = previous
-                level_current = current
-            current_max_shift = self.max_shift_multilevel // level_scaler
-            if level == self.n_levels:
-                offset, coeffs, min_error = self.run_with_current_max_shift(level_previous, level_current,
-                                                                            current_max_shift)
-            else:
-                y_range = np.clip(
-                    [np.round(-last_level_offset[0] * 2) - 4, np.round(-last_level_offset[0] * 2) + 4],
-                    a_min=-current_max_shift, a_max=current_max_shift).astype(int)
-                x_range = np.clip(
-                    [np.round(-last_level_offset[1] * 2) - 4, np.round(-last_level_offset[1] * 2) + 4],
-                    a_min=-current_max_shift, a_max=current_max_shift).astype(int)
-                offset, coeffs, min_error = self.run_with_current_max_shift(level_previous, level_current,
-                                                                            y_range=y_range, x_range=x_range)
-            self.check_fitting_result(coeffs, min_error)
-            last_level_offset = offset
-        self.check_offset(offset)
-        self.check_offset_quality(previous, current, offset, tol=self.tol)
+                current_max_shift += 10
+                logger.info(
+                    'Multilevel result failed quality check, so I am increasing max shift to {}.'.format(
+                        current_max_shift)
+                )
         return offset
 
     def run_expandable(self, previous, current, *args, **kwargs):
