@@ -20,7 +20,7 @@
     0
   ],
   "sift_outlier_removal_method": "trial_error",
-  "num_neighbors_collective": 4,
+  "num_neighbors_collective": 8,
   "hybrid_registration_algs_multiiter": [
     [
       "error_map_expandable",
@@ -41,12 +41,12 @@
       0.15
     ],
     [
-      0.3,
-      0.15
+      0.15,
+      0.1
     ],
     [
-      0.3,
-      0.15
+      0.15,
+      0.1
     ]
   ]
 }
