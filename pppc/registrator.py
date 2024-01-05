@@ -80,12 +80,12 @@ class RegistrationAlgorithm:
             if std_roi < 0.2:
                 logger.info('Error is low ({}) but variance is also low within the ROI ({}).'.format(error, std_roi))
                 self.status = self.status_dict['questionable']
-                fig, ax = plt.subplots(1, 2, figsize=(8, 4))
-                ax[0].imshow(prev_shifted[sy:ey, sx:ex])
-                ax[1].imshow(curr[sy:ey, sx:ex])
-                plt.show()
-                print(np.std(curr[sy:ey, sx:ex]))
-                print(offset)
+                # fig, ax = plt.subplots(1, 2, figsize=(8, 4))
+                # ax[0].imshow(prev_shifted[sy:ey, sx:ex])
+                # ax[1].imshow(curr[sy:ey, sx:ex])
+                # plt.show()
+                # print(np.std(curr[sy:ey, sx:ex]))
+                # print(offset)
         return error
 
     def calculate_metric_region_for_shifted_image(self, offset, image_shape):
