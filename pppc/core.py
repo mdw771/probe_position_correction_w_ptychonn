@@ -225,6 +225,22 @@ class PtychoNNProbePositionCorrector:
         self.build_linear_system_for_collective_correction()
         self.solve_linear_system(mode='residue', smooth_constraint_weight=self.config_dict['smooth_constraint_weight'])
 
+    def get_neightbor_inds(self, i_dp, knn_inds):
+        this_neighbors_inds = []
+        # Must have the 2 adjacently indexed DPs
+        if i_dp == 0:
+            this_neighbors_inds = [1]
+        elif i_dp == len(self.orig_probe_positions.array) - 1:
+            this_neighbors_inds = [i_dp - 1]
+        else:
+            this_neighbors_inds = [i_dp - 1, i_dp + 1]
+        i_knn = 0
+        while len(this_neighbors_inds) < self.config_dict['num_neighbors_collective']:
+            if knn_inds[i_knn] not in this_neighbors_inds:
+                this_neighbors_inds.append(knn_inds[i_knn])
+            i_knn += 1
+        return this_neighbors_inds
+
     def build_linear_system_for_collective_correction(self):
         self.a_mat = []
         self.b_vec = []
@@ -235,7 +251,9 @@ class PtychoNNProbePositionCorrector:
         nn_engine.fit(self.orig_probe_positions.array)
         nn_dists, nn_inds = nn_engine.kneighbors(self.orig_probe_positions.array)
         for i_dp, this_orig_pos in enumerate(tqdm(self.orig_probe_positions.array)):
-            this_neighbors_inds = nn_inds[i_dp, 1:]
+            this_knn_inds = nn_inds[i_dp, 1:]
+            this_neighbors_inds = self.get_neightbor_inds(i_dp, this_knn_inds)
+
             # `ind` is also provided in case the reconstructor is a `VirtualReconstructor`.
             current_obj = self.reconstruct_dp(dp=self.dp_data_fhdl.get_dp_by_raw_index(i_dp), ind=i_dp)[1][0]
             for ind_neighbor in this_neighbors_inds:
