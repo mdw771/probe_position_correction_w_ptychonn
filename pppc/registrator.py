@@ -1,4 +1,5 @@
 import copy
+import logging
 import warnings
 
 import numpy as np
@@ -114,7 +115,7 @@ class HybridRegistrationAlgorithm(RegistrationAlgorithm):
                     ErrorMapRegistrationAlgorithm(subpixel=False, max_shift=max_shift, n_levels=3, tol=tols[i]))
             elif alg == 'error_map_expandable':
                 self.alg_list.append(
-                    ErrorMapRegistrationAlgorithm(subpixel=False, max_shift=max_shift, n_levels=1, tol=tols[i]))
+                    ErrorMapRegistrationAlgorithm(subpixel=True, max_shift=max_shift, n_levels=1, tol=tols[i]))
             elif alg == 'sift':
                 self.alg_list.append(
                     SIFTRegistrationAlgorithm(outlier_removal_method='trial_error', boundary_exclusion_length=16,
@@ -265,14 +266,19 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
                 i += 1
         result_table = np.stack(result_table)
         min_error = np.min(result_table[:, 2])
+        i_min_error = np.argmin(result_table[:, 2])
+        int_offset = result_table[i_min_error, :2]
         if self.subpixel:
             offset, coeffs = self.__class__._fit_quadratic_peak_in_error_map(result_table, return_coeffs=True)
+            # Reject fitting result if too far from integer solution
+            if not np.all(np.abs(offset - int_offset) < 2):
+                logger.info('Rejected quadratic fitting because it is too far away from integer solution.')
+                offset = int_offset
             # Probe position offset is opposite to image offset.
             offset = -np.array(offset)
             return offset, coeffs, min_error
         else:
-            i_min_error = np.argmin(result_table[:, 2])
-            offset = result_table[i_min_error, :2]
+            offset = int_offset
             offset = -np.array(offset)
 
             if self.debug:
