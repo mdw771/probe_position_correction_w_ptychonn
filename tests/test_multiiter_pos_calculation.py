@@ -40,6 +40,7 @@ def test_multiiter_pos_calculation():
     gold_pos_list = gold_pos_list / 8e-9
     calc_pos_list -= np.mean(calc_pos_list, axis=0)
     gold_pos_list -= np.mean(gold_pos_list, axis=0)
+    print(gold_pos_list, calc_pos_list)
     assert np.allclose(calc_pos_list, gold_pos_list, atol=1e-1)
 
 
