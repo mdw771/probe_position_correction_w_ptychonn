@@ -83,7 +83,8 @@ class TikeReconstruction:
         print('data size: ', data_raw.shape)
         print('probe size: ', probe_raw.shape)
 
-        self.psize_nm = np.load('data/scan221_raw.npz')['pixelsize'] * 1e9
+        # self.psize_nm = np.load('data/scan221_raw.npz')['pixelsize'] * 1e9
+        self.psize_nm = 8
 
         # probe_pos_list = probe_pos_list_raw
         # probe_pos_list *= -1
@@ -118,7 +119,8 @@ class TikeReconstruction:
                 use_adaptive_moment=True,
                 use_position_regularization=True,
                 update_magnitude_limit=2,
-                transform=tike.ptycho.position.AffineTransform()
+                transform=tike.ptycho.position.AffineTransform(),
+                optimize_scale=False  # Do NOT optimize global scale
             )
 
     def build_parameters(self):
@@ -273,6 +275,18 @@ class TikeReconstruction:
                     self.scan_idx, type_name, self.pos_corr_str)),
                     self.pos_error_history)
 
+    def plot_probe_position_history(self):
+        pos_list_true = self.get_true_positions()
+        plt.figure()
+        plt.scatter(pos_list_true[:, 1], pos_list_true[:, 0])
+        plt.plot(pos_list_true[:, 1], pos_list_true[:, 0])
+        for i_epoch in range(len(self.probe_pos_history))[::32]:
+            this_pos_list = self.probe_pos_history[i_epoch]
+            plt.scatter(this_pos_list[:, 1], this_pos_list[:, 0], alpha=0.5)
+            plt.plot(this_pos_list[:, 1], this_pos_list[:, 0], alpha=0.5)
+        plt.show()
+
+
     def plot_reconstruction_error_history(self):
         if self.type != 'true' and self.do_pos_corr and self.record_intermediate_states:
             plt.figure()
@@ -319,10 +333,10 @@ class TikeReconstruction:
         g_mse = np.mean(np.sum((g2 - g1) ** 2, axis=1))
         return g_mse
 
-scan_indices = [233]#, 234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
+scan_indices = [233, 234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
 # scan_indices = [253]
 config_list = [('true', 0), ('baseline', 0), ('baseline', 1), ('calculated', 0), ('calculated', 1)]
-# config_list = [('calculated', 0)]
+# config_list = [('baseline', 1), ('calculated', 1)]
 
 for scan_idx in scan_indices:
     for type, pos_corr in config_list:

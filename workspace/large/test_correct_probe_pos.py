@@ -29,9 +29,9 @@ matplotlib.rc('font',family='Times New Roman')
 matplotlib.rcParams['font.size'] = 14
 plt.viridis()
 
-# scan_indices = [233, 235, 234, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
+scan_indices = [233, 235, 234, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
 # scan_indices = [235, 240, 246, ]
-scan_indices = [247]
+# scan_indices = [247]
 
 for scan_idx in scan_indices[rank::n_ranks]:
     print('==========================')
@@ -42,7 +42,8 @@ for scan_idx in scan_indices[rank::n_ranks]:
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
 
-    psize_nm = np.load('data/scan221_raw.npz')['pixelsize'] * 1e9
+    # psize_nm = np.load('data/scan221_raw.npz')['pixelsize'] * 1e9
+    psize_nm = 8
     probe_pos_list = ProbePositionList(file_path='data/pos{}.csv'.format(scan_idx),
                                        unit='m', psize_nm=psize_nm, convert_to_pixel=True, first_is_x=False)
     fig, ax, scat = probe_pos_list.plot(show=False, return_obj=True)
@@ -55,7 +56,7 @@ for scan_idx in scan_indices[rank::n_ranks]:
                                            {236: 0.5, 239: 0.5, 240: 0.25, 241: 0.25, 242: 0.25, 250: 0.5, 251: 0.5,
                                             252: 0.25, 253: 0.25})
     s = scaling_dict[scan_idx]
-    probe_pos_list_baseline = np.genfromtxt('data/pos221.csv', delimiter=',').astype('float32') * s  # Baseline
+    probe_pos_list_baseline = np.genfromtxt('data/pos221.csv', delimiter=',').astype('float32') / (psize_nm * 1e-9) * s  # Baseline
 
     try:
         #recons = tifffile.imread('outputs/pred_test{}_model_36SpiralDatasets_model_PtychoNNModel_nLevels_4_batchSizePerProcess_32_learningRatePerProcess_0.0001/pred_phase.tiff'.format(scan_idx))
