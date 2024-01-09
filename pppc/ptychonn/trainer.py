@@ -68,11 +68,16 @@ class PtychoNNTrainer:
     def get_device():
         return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    def build(self):
+    def build(self, seed=None):
+        if seed is not None:
+            set_all_random_seeds(seed)
+
         # When default device is set to `cuda`, DataLoader with `shuffle=True` would crash when yielding due to an
         # internal bug of PyTorch. Therefore, we set default device to `cpu` here and manually assign device to objects.
         torch.set_default_device('cpu')
 
+        if self.config_dict['dataset_decimation_ratio'] < 1:
+            self.dataset = self.decimate_dataset(self.dataset, self.config_dict['dataset_decimation_ratio'])
         self.build_split_datasets()
         self.training_dataloader = DataLoader(self.training_dataset, shuffle=True, batch_size=self.batch_size)
         self.validation_dataloader = DataLoader(self.validation_dataset, shuffle=False, batch_size=self.batch_size)
@@ -198,6 +203,12 @@ class PtychoNNTrainer:
         train_idx, val_idx = train_test_split(list(range(len(self.dataset))), test_size=self.validation_ratio)
         self.training_dataset = Subset(self.dataset, train_idx)
         self.validation_dataset = Subset(self.dataset, val_idx)
+
+    def decimate_dataset(self, dset, ratio_to_keep):
+        logger.info('Decimating dataset to {} of the original size...'.format(ratio_to_keep))
+        keep_idx, _ = train_test_split(list(range(len(dset))), test_size=(1 - ratio_to_keep))
+        dset_new = Subset(dset, keep_idx)
+        return dset_new
 
     def build_optimizer(self):
         if isinstance(self.config_dict['optimizer'], str):

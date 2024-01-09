@@ -72,6 +72,7 @@ class InferenceConfigDict(ConfigDict):
         self['model'] = None
         # Path to save PtychoNN prediction results.
         self['prediction_output_path'] = None
+        self['dataset_decimation_ratio'] = 1
         self['cpu_only'] = False
 
         # ===== Image registration configs =====
