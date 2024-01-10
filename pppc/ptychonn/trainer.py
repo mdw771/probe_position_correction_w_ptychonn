@@ -76,9 +76,11 @@ class PtychoNNTrainer:
         # internal bug of PyTorch. Therefore, we set default device to `cpu` here and manually assign device to objects.
         torch.set_default_device('cpu')
 
-        if self.config_dict['dataset_decimation_ratio'] < 1:
-            self.dataset = self.decimate_dataset(self.dataset, self.config_dict['dataset_decimation_ratio'])
         self.build_split_datasets()
+        if (self.config_dict['dataset_decimation_ratio'] is not None and
+                self.config_dict['dataset_decimation_ratio'] < 1):
+            self.training_dataset = self.decimate_dataset(self.training_dataset,
+                                                          self.config_dict['dataset_decimation_ratio'])
         self.training_dataloader = DataLoader(self.training_dataset, shuffle=True, batch_size=self.batch_size)
         self.validation_dataloader = DataLoader(self.validation_dataset, shuffle=False, batch_size=self.batch_size)
 
