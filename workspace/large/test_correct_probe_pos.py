@@ -25,20 +25,10 @@ except:
     rank = 0
     n_ranks = 1
 
-matplotlib.rc('font',family='Times New Roman')
-matplotlib.rcParams['font.size'] = 14
-plt.viridis()
 
-scan_indices = [233, 235, 234, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
-# scan_indices = [235, 240, 246, ]
-# scan_indices = [247]
-
-for scan_idx in scan_indices[rank::n_ranks]:
-    print('==========================')
-    print('Now running {}'.format(scan_idx))
-    print('==========================')
+def run_pos_corr(scan_idx, image_path, save_path='outputs'):
     save_figs = True
-    output_dir = os.path.join('outputs', 'test{}'.format(scan_idx))
+    output_dir = os.path.join(save_path, 'test{}'.format(scan_idx))
     if not os.path.isdir(output_dir):
         os.makedirs(output_dir)
 
@@ -48,7 +38,7 @@ for scan_idx in scan_indices[rank::n_ranks]:
                                        unit='m', psize_nm=psize_nm, convert_to_pixel=True, first_is_x=False)
     fig, ax, scat = probe_pos_list.plot(show=False, return_obj=True)
     if save_figs:
-        fig.savefig('outputs/test{}/path_plot_true.pdf'.format(scan_idx))
+        fig.savefig(os.path.join(output_dir, 'path_plot_true.pdf'.format(scan_idx)))
     else:
         plt.show()
 
@@ -60,7 +50,7 @@ for scan_idx in scan_indices[rank::n_ranks]:
 
     try:
         #recons = tifffile.imread('outputs/pred_test{}_model_36SpiralDatasets_model_PtychoNNModel_nLevels_4_batchSizePerProcess_32_learningRatePerProcess_0.0001/pred_phase.tiff'.format(scan_idx))
-        recons = tifffile.imread('outputs/pred_test{}_model_36SpiralDatasets_cleaned/pred_phase.tiff'.format(scan_idx))
+        recons = tifffile.imread(image_path)
     except:
         print('Reading images from scan### folder.')
         recons = tifffile.imread('outputs/pred_scan{}_model_36SpiralDatasets_model_PtychoNNModel_nLevels_4_batchSizePerProcess_32_learningRatePerProcess_0.0001/pred_phase.tiff'.format(scan_idx))
@@ -76,7 +66,7 @@ for scan_idx in scan_indices[rank::n_ranks]:
     config_dict['ptycho_reconstructor'].set_object_image_array(recons)
     config_dict['random_seed'] = 196 
     config_dict['debug'] = False
-    config_dict['probe_position_list'] = None
+    config_dict['probe_position_list'] = None if scan_idx != 247 else ProbePositionList(position_list=probe_pos_list_baseline)
     config_dict['central_crop'] = None
     config_dict['baseline_position_list'] = ProbePositionList(position_list=probe_pos_list_baseline)
 
@@ -91,7 +81,7 @@ for scan_idx in scan_indices[rank::n_ranks]:
     corrector_s = corrector_chain.corrector_list[-1]
     fig, ax, scat = corrector_s.new_probe_positions.plot(return_obj=True, show=False)
     if save_figs:
-        fig.savefig('outputs/test{}/path_plot_serial.pdf'.format(scan_idx))
+        fig.savefig(os.path.join(output_dir, 'path_plot_serial.pdf'.format(scan_idx)))
     else:
         plt.show()
 
@@ -100,19 +90,22 @@ for scan_idx in scan_indices[rank::n_ranks]:
     corrector_c1 = corrector_chain.corrector_list[1]
     fig, ax, scat = corrector_c1.new_probe_positions.plot(return_obj=True, show=False)
     if save_figs:
-        fig.savefig('outputs/test{}/path_plot_collective_iter_1_nn_12_sw_1e-2.pdf'.format(scan_idx), format='pdf')
+        fig.savefig(os.path.join(output_dir, 'path_plot_collective_iter_1_nn_12_sw_1e-2.pdf'.format(scan_idx)), format='pdf')
     else:
         plt.show()
 
-    corrector_chain.run_correction_iteration(2)
-    corrector_c2 = corrector_chain.corrector_list[2]
+    if corrector_chain.n_iters > 2:
+        corrector_chain.run_correction_iteration(2)
+        corrector_c2 = corrector_chain.corrector_list[2]
+    else:
+        corrector_c2 = corrector_c1
     fig, ax, scat = corrector_c2.new_probe_positions.plot(return_obj=True, show=False)
     if save_figs:
-        fig.savefig('outputs/test{}/path_plot_collective_iter_2_nn_12_sw_1e-3_1e-2.pdf'.format(scan_idx), format='pdf')
+        fig.savefig(os.path.join(output_dir, 'path_plot_collective_iter_2_nn_12_sw_1e-3_1e-2.pdf'.format(scan_idx)), format='pdf')
     else:
         plt.show()
 
-    with open('outputs/test{}/redone_with_baseline.txt'.format(scan_idx), 'w') as f:
+    with open(os.path.join(output_dir, 'redone_with_baseline.txt'.format(scan_idx)), 'w') as f:
         f.write(str(int(corrector_chain.redone_with_baseline)))
 
     probe_pos_list_calc = corrector_c2.new_probe_positions.array
@@ -127,7 +120,7 @@ for scan_idx in scan_indices[rank::n_ranks]:
     plt.plot(probe_pos_list_true[:, 1], probe_pos_list_true[:, 0], linewidth=0.5, label='True')
     plt.legend()
     if save_figs:
-        plt.savefig('outputs/test{}/comparison_path_plot_collective_iter_2_nn_12_sw_1e-3_1e-2.pdf'.format(scan_idx))
+        plt.savefig(os.path.join(output_dir, 'comparison_path_plot_collective_iter_2_nn_12_sw_1e-3_1e-2.pdf'.format(scan_idx)))
     else:
         plt.show()
 
@@ -135,3 +128,22 @@ for scan_idx in scan_indices[rank::n_ranks]:
         corrector_c2.new_probe_positions.to_csv(os.path.join(output_dir, 'calc_pos_{}_collective_niters_2_beta_0p5_nn_12_sw_1e-2_1e-3.csv'.format(scan_idx)), psize_nm=psize_nm)
 
     plt.close()
+
+
+if __name__ == '__main__':
+    matplotlib.rc('font', family='Times New Roman')
+    matplotlib.rcParams['font.size'] = 14
+    plt.viridis()
+
+    # scan_indices = [233, 235, 234, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
+    # scan_indices = [235, 240, 246, ]
+    scan_indices = [246]
+
+    for scan_idx in scan_indices[rank::n_ranks]:
+        print('==========================')
+        print('Now running {}'.format(scan_idx))
+        print('==========================')
+        run_pos_corr(scan_idx,
+                     'outputs/pred_test{}_model_36SpiralDatasets_cleaned_valRatio_10/pred_phase.tiff'.format(scan_idx),
+                     save_path='outputs'
+                     )

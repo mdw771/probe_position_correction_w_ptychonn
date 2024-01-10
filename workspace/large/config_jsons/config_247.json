@@ -1,11 +1,9 @@
 {
   "method_multiiter": [
-    "serial",
     "collective",
     "collective"
   ],
   "registration_method_multiiter": [
-    "sift",
     "hybrid",
     "hybrid"
   ],
@@ -15,7 +13,6 @@
   "offset_estimator_order": 1,
   "offset_estimator_beta": 0.5,
   "smooth_constraint_weight_multiiter": [
-    0,
     1e-4,
     1e-4
   ],
@@ -29,20 +26,12 @@
     [
       "error_map_expandable",
       "sift"
-    ],
-    [
-      "error_map_expandable",
-      "sift"
     ]
   ],
   "hybrid_registration_tols_multiiter": [
     [
       0.15,
       0.15
-    ],
-    [
-      0.15,
-      0.2
     ],
     [
       0.15,
