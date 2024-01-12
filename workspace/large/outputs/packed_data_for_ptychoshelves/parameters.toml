@@ -1,0 +1,33 @@
+algorithm = "lstsq_grad"
+iterations = [ 1, 2, 3, 5, 7, 9, 13, 18, 26, 36, 50, 70, 97, 135, 187, 259, 360, 500, 1000]
+num_gpu = [ 2,]
+title = "pppc"
+dataloader = "read_ptychodus"
+
+[probe]
+num_probe_modes = 1
+num_eigen_modes = 1
+
+[probe_options]
+force_orthogonality=true
+use_adaptive_moment=true
+force_centered_intensity=true
+
+[object_options]
+use_adaptive_moment=true
+
+[algorithm_options]
+num_batch = 100
+batch_method = "wobbly_center"
+time_limit = 600
+
+[exitwave_options]
+propagation_normalization = "backward"
+
+[data]
+detector_dist = 2.2
+detector_pixel_width = 7.5e-05
+beam_center_x = 861
+beam_center_y = 559
+gap_value = 4294967295
+beam_energy = 8800
