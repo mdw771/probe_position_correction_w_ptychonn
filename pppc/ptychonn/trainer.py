@@ -220,7 +220,8 @@ class PtychoNNTrainer:
             self.optimizer = self.config_dict['optimizer'](self.model.parameters(), lr=self.learning_rate)
 
     def build_scheduler(self):
-        self.iterations_per_epoch = (len(self.training_dataset) - len(self.validation_dataset)) / self.batch_size
+        # Was (len(self.training_dataset) - len(self.validation_dataset)) / self.batch_size
+        self.iterations_per_epoch = len(self.training_dataset) / self.batch_size
         self.iterations_per_epoch = np.floor(self.iterations_per_epoch) + 1
         step_size = 6 * self.iterations_per_epoch
         self.scheduler = torch.optim.lr_scheduler.CyclicLR(self.optimizer, base_lr=self.learning_rate / 10,
