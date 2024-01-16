@@ -38,7 +38,7 @@ for i_scan = 1:length(scan_indices)
             momentum = 0.5;
             %%%%%%%%%%%%
             if strcmp(case_type, 'true')
-                probe_position_search_i = 0;
+                probe_position_search_i = inf;
             else
                 probe_position_search_i = 1;
             end

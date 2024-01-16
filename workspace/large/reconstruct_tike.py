@@ -334,7 +334,7 @@ class TikeReconstruction:
         return g_mse
 
 # scan_indices = [233, 234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
-scan_indices = [246, 247]
+scan_indices = [246,]
 # config_list = [('true', 0), ('baseline', 0), ('baseline', 1), ('calculated', 0), ('calculated', 1)]
 config_list = [('calculated', 0), ('calculated', 1)]
 

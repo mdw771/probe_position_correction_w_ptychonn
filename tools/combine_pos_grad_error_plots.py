@@ -24,11 +24,15 @@ for d in dir_list:
         losses_baseline = np.loadtxt(os.path.join(d, fname_baseline))
         losses_calculated = np.loadtxt(os.path.join(d, fname_calculated))
 
+        # RMS
+        losses_baseline = np.sqrt(losses_baseline)
+        losses_calculated = np.sqrt(losses_calculated)
+
         fig = plt.figure()
         plt.semilogy(losses_baseline, label='Uncorrected')
         plt.semilogy(losses_calculated, label='Calculated')
         plt.xlabel('Epoch')
-        plt.ylabel('Mean squared position gradient error (pixel)')
+        plt.ylabel('RMS of pairwise position error (pixel)')
         plt.legend()
         plt.savefig(os.path.join(d, 'pos_error_comparison_baseline_calc.pdf'))
     else:
