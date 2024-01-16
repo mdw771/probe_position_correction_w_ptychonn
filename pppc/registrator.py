@@ -16,6 +16,7 @@ from pppc.message_logger import logger
 class Registrator:
 
     def __init__(self, method='error_map', max_shift=None, random_seed=123, **kwargs):
+        self.kwargs = kwargs
         self.method = method
         self.max_shift = max_shift
         self.random_seed = random_seed
@@ -26,6 +27,11 @@ class Registrator:
         self.algorithm = self.algorithm_dict[method](max_shift=self.max_shift, **kwargs)
         self.algorithm.random_seed = self.random_seed
 
+    def has_registratable_features(self, img, threshold=0.003):
+        if np.std(img) < threshold:
+            return False
+        return True
+
     def run(self, previous, current):
         """
         Run registration and get offset. The returned offset is the supposed *probe position difference* of the
@@ -35,6 +41,11 @@ class Registrator:
         :param current: object image of the current scan point.
         :return: np.ndarray.
         """
+        if 'use_baseline_offsets_for_uncertain_pairs' in self.kwargs.keys() and \
+                self.kwargs['use_baseline_offsets_for_uncertain_pairs']:
+            if (not self.has_registratable_features(previous)) or (not self.has_registratable_features(current)):
+                self.algorithm.status = self.algorithm.status_dict['empty']
+                return np.array([0, 0])
         offset = self.algorithm.run(previous, current)
         return offset
 
@@ -47,7 +58,7 @@ class Registrator:
 
 class RegistrationAlgorithm:
     def __init__(self, tol=0.3, *args, **kwargs):
-        self.status_dict = {'ok': 0, 'questionable': 1, 'bad': 2}
+        self.status_dict = {'ok': 0, 'questionable': 1, 'bad': 2, 'empty': 3}
         self.status = 0
         self.random_seed = 123
         self.tol = tol
@@ -407,8 +418,12 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
             cropped_current = current[crop_len[0]:-crop_len[0], crop_len[1]:-crop_len[1]]
             while not has_enough_matches:
                 self.status = self.status_dict['ok']
-                keypoints_prev, keypoints_curr, descriptors_prev, descriptors_curr = self.find_keypoints(
-                    cropped_previous, cropped_current)
+                try:
+                    keypoints_prev, keypoints_curr, descriptors_prev, descriptors_curr = self.find_keypoints(
+                        cropped_previous, cropped_current)
+                except RuntimeError:
+                    self.status = self.status_dict['empty']
+                    return np.array([0, 0])
                 matches, matched_points_prev, matched_points_curr = self.find_matches(keypoints_prev, keypoints_curr,
                                                                                       descriptors_prev, descriptors_curr)
                 if len(matches) < 2 and not is_full_size:
@@ -421,7 +436,12 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
                     has_enough_matches = True
         else:
             self.status = self.status_dict['ok']
-            keypoints_prev, keypoints_curr, descriptors_prev, descriptors_curr = self.find_keypoints(previous, current)
+            try:
+                keypoints_prev, keypoints_curr, descriptors_prev, descriptors_curr = self.find_keypoints(previous,
+                                                                                                         current)
+            except RuntimeError:
+                self.status = self.status_dict['empty']
+                return np.array([0, 0])
             matches, matched_points_prev, matched_points_curr = self.find_matches(keypoints_prev, keypoints_curr,
                                                                                   descriptors_prev, descriptors_curr)
 
