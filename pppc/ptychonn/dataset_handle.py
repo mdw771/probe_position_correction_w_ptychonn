@@ -9,10 +9,11 @@ from pppc.helper import transform_data_for_ptychonn
 
 
 class HDF5Dataset(Dataset):
-    def __init__(self, filename, transform_func=None, transform_func_kwargs=None, verbose=False):
+    def __init__(self, filename, transform_func=None, transform_func_kwargs=None, standardized=False, verbose=False):
         self.filename = filename
         self.f = h5py.File(self.filename, 'r')
         self.verbose = verbose
+        self.standardized = standardized
         self.check_dataset()
         if transform_func is None:
             self.transform_func = self.resize_dp
@@ -52,7 +53,8 @@ class HDF5Dataset(Dataset):
             self.transform_func_kwargs = {'target_shape': target_shape}
         dp = self.transform_func(dp, **self.transform_func_kwargs)
         # Zero small elements
-        dp = np.where(dp < 3, 0, dp)
+        if not self.standardized:
+            dp = np.where(dp < 3, 0, dp)
         # Reshape to (N, C, H, W) and cast to tensor.
         if len(dp.shape) == 3:
             dp = torch.tensor(dp[:, np.newaxis, :, :].astype('float32'))
