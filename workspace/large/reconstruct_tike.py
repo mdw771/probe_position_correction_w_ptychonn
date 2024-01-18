@@ -11,6 +11,7 @@ import numpy as np
 import cupy
 import scipy.ndimage as ndi
 from skimage.transform import resize
+import pandas as pd
 
 import tike
 import tike.ptycho
@@ -177,6 +178,7 @@ class TikeReconstruction:
         # self.plot_probe_position_error_history()
         self.plot_probe_position_grad_error_history()
         # self.plot_reconstruction_error_history()
+        self.save_refined_positions()
 
     def plot_loss(self):
         fig = plt.figure()
@@ -246,9 +248,17 @@ class TikeReconstruction:
         if self.save_figs and self.do_pos_corr:
             plt.savefig(
                 'outputs/test{}/comparison_path_plot_true_calc_refined_clip_2_collective_iter_2_nn_12_sw_1e-3_1e-2.pdf'.format(
-                    scan_idx))
+                    self.scan_idx))
         elif not self.save_figs:
             plt.show()
+
+    def save_refined_positions(self):
+        if self.do_pos_corr:
+            probe_pos_list_refined = self.result.scan
+            probe_pos_list_refined -= np.mean(probe_pos_list_refined, axis=0)
+            type_name = self.output_type_name_mapping[self.type]
+            self.save_pos_to_csv(probe_pos_list_refined * (self.psize_nm * 1e-9),
+                                 os.path.join('outputs', 'test{}'.format(self.scan_idx), 'refined_{}_pos.csv'.format(type_name)))
 
     def plot_probe_position_grad_error_history(self):
         if self.type != 'true' and self.do_pos_corr and self.record_intermediate_states:
@@ -257,7 +267,7 @@ class TikeReconstruction:
             for i_epoch, this_pos_list in enumerate(self.probe_pos_history):
                 self.pos_grad_error_history.append(self.calculate_pos_grad_error(this_pos_list, probe_pos_list_true))
             if self.save_figs:
-                type_name = self.output_type_name_mapping[type]
+                type_name = self.output_type_name_mapping[self.type]
                 np.savetxt(os.path.join('outputs/test{}/pos_grad_error_history_{}_pos_{}.txt'.format(
                     self.scan_idx, type_name, self.pos_corr_str)),
                     self.pos_grad_error_history)
@@ -307,6 +317,10 @@ class TikeReconstruction:
         probe_pos_list_true = probe_pos_list_true / (self.psize_nm * 1e-9)
         return probe_pos_list_true
 
+    def save_pos_to_csv(self, arr, filename):
+        df = pd.DataFrame(arr)
+        df.to_csv(filename, header=False, index=False)
+
     @staticmethod
     def clean_data(arr):
         mask = arr < 0
@@ -333,10 +347,10 @@ class TikeReconstruction:
         g_mse = np.mean(np.sum((g2 - g1) ** 2, axis=1))
         return g_mse
 
-# scan_indices = [233, 234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
-scan_indices = [246,]
+scan_indices = [233, 234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
+# scan_indices = [246,]
 # config_list = [('true', 0), ('baseline', 0), ('baseline', 1), ('calculated', 0), ('calculated', 1)]
-config_list = [('calculated', 0), ('calculated', 1)]
+config_list = [('baseline', 1), ('calculated', 1)]
 
 for scan_idx in scan_indices:
     for type, pos_corr in config_list:
