@@ -145,4 +145,5 @@ class PtychoNNTrainingConfigDict(TrainingConfigDict):
         self['validation_ratio'] = 0.003  # Ratio of validation set out of the entire dataset
         self['loss_function'] = None  # Can be None (default to L1Loss) or a Callable.
         self['dataset_decimation_ratio'] = 1
+        self['schedule_learning_rate'] = True
 

@@ -148,7 +148,8 @@ class PtychoNNTrainer:
             loss_ph += (loss_p.detach().item() if self.prediction_type['phase'] else 0.0)
 
             # Update the LR according to the schedule -- CyclicLR updates each batch
-            self.scheduler.step()
+            if self.config_dict['schedule_learning_rate']:
+                self.scheduler.step()
             self.metric_dict['lrs'].append(self.scheduler.get_last_lr())
 
             n_batches += 1
@@ -217,6 +218,8 @@ class PtychoNNTrainer:
         if isinstance(self.config_dict['optimizer'], str):
             if self.config_dict['optimizer'] == 'adam':
                 self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+            elif self.config_dict['optimizer'] == 'sgd':
+                self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
         else:
             self.optimizer = self.config_dict['optimizer'](self.model.parameters(), lr=self.learning_rate)
 
