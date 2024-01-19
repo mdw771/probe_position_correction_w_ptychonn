@@ -9,16 +9,19 @@ from pppc.helper import transform_data_for_ptychonn
 
 
 class HDF5Dataset(Dataset):
-    def __init__(self, filename, transform_func=None, transform_func_kwargs=None, standardized=False, verbose=False):
+    def __init__(self, filename, transform_func='default', transform_func_kwargs=None,
+                 label_transform_func=None,
+                 standardized=False, verbose=False):
         self.filename = filename
         self.f = h5py.File(self.filename, 'r')
         self.verbose = verbose
         self.standardized = standardized
         self.check_dataset()
-        if transform_func is None:
+        if transform_func == 'default':
             self.transform_func = self.resize_dp
         else:
             self.transform_func = transform_func
+        self.label_transform_func = label_transform_func
         if transform_func_kwargs is None:
             transform_func_kwargs = {}
         self.transform_func_kwargs = transform_func_kwargs
@@ -51,7 +54,10 @@ class HDF5Dataset(Dataset):
         target_shape = real_phase.shape[-2:]
         if self.transform_func == self.resize_dp:
             self.transform_func_kwargs = {'target_shape': target_shape}
-        dp = self.transform_func(dp, **self.transform_func_kwargs)
+        if self.transform_func is not None:
+            dp = self.transform_func(dp, **self.transform_func_kwargs)
+        if self.label_transform_func is not None:
+            real_mag, real_phase = self.label_transform_func(real_mag, real_phase)
         # Zero small elements
         if not self.standardized:
             dp = np.where(dp < 3, 0, dp)
