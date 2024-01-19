@@ -2,6 +2,7 @@ import os
 import itertools
 import copy
 import re
+import inspect
 
 import torch, torchvision
 import torch.nn as nn
@@ -440,11 +441,12 @@ class PtychoNNHyperparameterScanner:
     def convert_item_to_be_dataframe_compatible(self, v):
         if isinstance(v, nn.Module):
             nv = v._get_name()
+        # If v is a tuple of (ModelClass, class_params)
         elif isinstance(v, (tuple, list)) and issubclass(v[0], nn.Module):
             nv = v[0].__name__
             if len(v[1]) > 0:
                 nv += '_' + self.convert_dict_to_string(v[1])
-        elif issubclass(v, torch.nn.modules.loss._Loss):
+        elif inspect.isclass(v) and issubclass(v, torch.nn.modules.loss._Loss):
             nv = v.__name__
         else:
             nv = v
