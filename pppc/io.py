@@ -185,3 +185,8 @@ def find_true_prefix(name_list):
         else:
             break
     return s
+
+
+def save_positions_to_csv(pos, filename):
+    df = pd.DataFrame(pos)
+    df.to_csv(filename, header=False, index=False)

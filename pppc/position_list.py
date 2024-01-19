@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import pandas as pd
 
-from pppc.io import load_probe_positions_from_file
+from pppc.io import load_probe_positions_from_file, save_positions_to_csv
 
 class ProbePositionList:
     def __init__(self, file_path=None, position_list=None, unit='pixel', psize_nm=None, convert_to_pixel=True,
@@ -66,5 +66,4 @@ class ProbePositionList:
             arr = arr * psize_nm
             factor = {'m': 1e9, 'cm': 1e7, 'mm': 1e6, 'um': 1e3, 'nm': 1}[unit]
             arr = arr / factor
-        df = pd.DataFrame(arr)
-        df.to_csv(filename, header=False, index=False)
+        save_positions_to_csv(arr, filename)
