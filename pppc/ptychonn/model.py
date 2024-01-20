@@ -16,7 +16,7 @@ from pppc.util import class_timeit
 
 
 class PtychoNNModel(nn.Module):
-    def __init__(self, n_levels=3, nconv=32):
+    def __init__(self, n_levels=3, nconv=32, use_batchnorm=False):
         """
         Vanilla PtychoNN model with adjustable number of levels.
 
@@ -26,6 +26,7 @@ class PtychoNNModel(nn.Module):
         super(PtychoNNModel, self).__init__()
         self.n_levels = n_levels
         self.nconv = nconv
+        self.use_batchnorm = use_batchnorm
 
         down_blocks = []
         for level in range(self.n_levels):
@@ -63,14 +64,19 @@ class PtychoNNModel(nn.Module):
         num_out_channels = int(self.nconv * 2 ** level)
         if level == 0:
             num_in_channels = 1
-        blocks = [
-            nn.Conv2d(in_channels=num_in_channels, out_channels=num_out_channels,
-                      kernel_size=3, stride=1, padding=(1, 1)),
-            nn.ReLU(),
-            nn.Conv2d(num_out_channels, num_out_channels, 3, stride=1, padding=(1, 1)),
-            nn.ReLU(),
-            nn.MaxPool2d((2, 2)),
-        ]
+
+        blocks = []
+        blocks.append(nn.Conv2d(in_channels=num_in_channels, out_channels=num_out_channels,
+                      kernel_size=3, stride=1, padding=(1, 1)))
+        if self.use_batchnorm:
+            blocks.append(nn.BatchNorm2d(num_out_channels))
+        blocks.append(nn.ReLU())
+        blocks.append(nn.Conv2d(num_out_channels, num_out_channels, 3, stride=1, padding=(1, 1)))
+        if self.use_batchnorm:
+            blocks.append(nn.BatchNorm2d(num_out_channels))
+        blocks.append(nn.ReLU())
+        blocks.append(nn.MaxPool2d((2, 2)))
+
         return blocks
 
     def get_up_block(self, level):
@@ -91,13 +97,17 @@ class PtychoNNModel(nn.Module):
             num_out_channels = self.nconv * 2 ** level
         num_in_channels = int(num_in_channels)
         num_out_channels = int(num_out_channels)
-        blocks = [
-            nn.Conv2d(num_in_channels, num_out_channels, 3, stride=1, padding=(1, 1)),
-            nn.ReLU(),
-            nn.Conv2d(num_out_channels, num_out_channels, 3, stride=1, padding=(1, 1)),
-            nn.ReLU(),
-            nn.Upsample(scale_factor=2, mode='bilinear'),
-        ]
+
+        blocks = []
+        blocks.append(nn.Conv2d(num_in_channels, num_out_channels, 3, stride=1, padding=(1, 1)))
+        if self.use_batchnorm:
+            blocks.append(nn.BatchNorm2d(num_out_channels))
+        blocks.append(nn.ReLU())
+        blocks.append(nn.Conv2d(num_out_channels, num_out_channels, 3, stride=1, padding=(1, 1)))
+        if self.use_batchnorm:
+            blocks.append(nn.BatchNorm2d(num_out_channels))
+        blocks.append(nn.ReLU())
+        blocks.append(nn.Upsample(scale_factor=2, mode='bilinear'))
         return blocks
 
     def forward(self, x):
@@ -112,7 +122,7 @@ class PtychoNNModel(nn.Module):
 
 
 class PtychoNNPhaseOnlyModel(nn.Module):
-    def __init__(self, nconv: int = 16):
+    def __init__(self, nconv: int = 16, use_batchnorm=False):
         """
         Phase-only model of PtychoNN. Model graph replicated From Anahka's ONNX file.
 
@@ -120,6 +130,7 @@ class PtychoNNPhaseOnlyModel(nn.Module):
         """
         super(PtychoNNPhaseOnlyModel, self).__init__()
         self.nconv = nconv
+        self.use_batchnorm = use_batchnorm
         self.encoder = nn.Sequential(
             # Appears sequential has similar functionality as TF avoiding need for separate model definition and activ
             *self.down_block(1, self.nconv),
@@ -145,23 +156,45 @@ class PtychoNNPhaseOnlyModel(nn.Module):
         )
 
     def down_block(self, filters_in, filters_out):
-        block = [
-            nn.Conv2d(in_channels=filters_in, out_channels=filters_out, kernel_size=3, stride=1, padding=(1, 1)),
-            nn.ReLU(),
-            nn.Conv2d(filters_out, filters_out, 3, stride=1, padding=(1, 1)),
-            nn.ReLU(),
-            nn.MaxPool2d((2, 2))
-        ]
+        if not self.use_batchnorm:
+            block = [
+                nn.Conv2d(in_channels=filters_in, out_channels=filters_out, kernel_size=3, stride=1, padding=(1, 1)),
+                nn.ReLU(),
+                nn.Conv2d(filters_out, filters_out, 3, stride=1, padding=(1, 1)),
+                nn.ReLU(),
+                nn.MaxPool2d((2, 2))
+            ]
+        else:
+            block = [
+                nn.Conv2d(in_channels=filters_in, out_channels=filters_out, kernel_size=3, stride=1, padding=(1, 1)),
+                nn.BatchNorm2d(filters_out),
+                nn.ReLU(),
+                nn.Conv2d(filters_out, filters_out, 3, stride=1, padding=(1, 1)),
+                nn.BatchNorm2d(filters_out),
+                nn.ReLU(),
+                nn.MaxPool2d((2, 2))
+            ]
         return block
 
     def up_block(self, filters_in, filters_out):
-        block = [
-            nn.Conv2d(filters_in, filters_out, 3, stride=1, padding=(1, 1)),
-            nn.ReLU(),
-            nn.Conv2d(filters_out, filters_out, 3, stride=1, padding=(1, 1)),
-            nn.ReLU(),
-            nn.Upsample(scale_factor=2, mode='bilinear')
-        ]
+        if not self.use_batchnorm:
+            block = [
+                nn.Conv2d(filters_in, filters_out, 3, stride=1, padding=(1, 1)),
+                nn.ReLU(),
+                nn.Conv2d(filters_out, filters_out, 3, stride=1, padding=(1, 1)),
+                nn.ReLU(),
+                nn.Upsample(scale_factor=2, mode='bilinear')
+            ]
+        else:
+            block = [
+                nn.Conv2d(filters_in, filters_out, 3, stride=1, padding=(1, 1)),
+                nn.BatchNorm2d(filters_out),
+                nn.ReLU(),
+                nn.Conv2d(filters_out, filters_out, 3, stride=1, padding=(1, 1)),
+                nn.BatchNorm2d(filters_out),
+                nn.ReLU(),
+                nn.Upsample(scale_factor=2, mode='bilinear')
+            ]
         return block
 
     def forward(self, x):
