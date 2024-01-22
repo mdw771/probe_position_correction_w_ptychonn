@@ -28,7 +28,10 @@ class HDF5Dataset(Dataset):
         self.transform_func_kwargs = transform_func_kwargs
 
     def __len__(self):
-        return self.f['data/real'].shape[0]
+        if self.read_complex:
+            return self.f['data/real'].shape[0]
+        else:
+            return self.f['data/real_phase'].shape[0]
 
     def __getitem__(self, idx):
         if self.verbose:
@@ -54,7 +57,7 @@ class HDF5Dataset(Dataset):
             real_mag = np.abs(real)
         else:
             real_phase = self.f['data/real_phase'][idx_list, :, :]
-            real_mag = self.f['data/real_mag'][idx_list, :, :]
+            real_mag = self.f['data/real_magnitude'][idx_list, :, :]
         dp = self.f['data/reciprocal'][idx_list, :, :]
         dp, real_mag, real_phase = self.process_data(dp, real_mag, real_phase)
         return dp, real_mag, real_phase
@@ -85,19 +88,27 @@ class HDF5Dataset(Dataset):
         if not np.array_equal(dp.shape[-2:], target_shape):
             return transform_data_for_ptychonn(dp, target_shape, overflow_correction=True)
 
+    def has_key(self, f, key):
+        try:
+            f[key]
+            return True
+        except:
+            return False
+
     def check_dataset(self):
         required_keys = [('data/real', 'data/real_phase', 'data/real_magnitude'), 'data/reciprocal']
         for key in required_keys:
             good = False
             if isinstance(key, tuple):
                 for subkey in key:
-                    if self.f[subkey]:
+                    if self.has_key(self.f, subkey):
                         good = True
                         if subkey == 'data/real_phase':
                             self.read_complex = False
                             print('{}: Reading real-numbered phase and magnitude.'.format(self.check_dataset.__name__))
+                        break
             else:
-                if not self.f[key]:
-                    good = False
+                if self.has_key(self.f, key):
+                    good = True
             if not good:
                 raise ValueError('HDF5 file does not have all the datasets required. Missing dataset: {}'.format(key))
