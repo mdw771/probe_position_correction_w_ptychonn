@@ -98,8 +98,10 @@ class PyTorchReconstructor(Reconstructor):
         """
         x = self.preprocess_data(x)
         pred_amp, pred_phase = self.model(x)
-        pred_amp = pred_amp.detach().cpu().numpy()[:, 0, :, :]
-        pred_phase = pred_phase.detach().cpu().numpy()[:, 0, :, :]
+        if pred_amp is not None:
+            pred_amp = pred_amp.detach().cpu().numpy()[:, 0, :, :]
+        if pred_phase is not None:
+            pred_phase = pred_phase.detach().cpu().numpy()[:, 0, :, :]
         return pred_amp, pred_phase
 
 
@@ -170,8 +172,10 @@ class DatasetInferencer:
             # TODO: make this compatible with 4D data array by creating a get indices method in data file handle.
             data_arr = self.dp_data_file_handle.array[i_start:i_end]
             pred_amp, pred_ph = self.reconstructor.batch_infer(data_arr)
-            self.write_tiffs(pred_ph, start_index=i_start, name_prefix='pred_phase')
-            self.write_tiffs(pred_amp, start_index=i_start, name_prefix='pred_amp')
+            if pred_ph is not None:
+                self.write_tiffs(pred_ph, start_index=i_start, name_prefix='pred_phase')
+            if pred_amp is not None:
+                self.write_tiffs(pred_amp, start_index=i_start, name_prefix='pred_amp')
             i_start = i_end
             i_end = min(i_start + self.inference_batch_size, self.dp_data_file_handle.num_dps)
             pbar.update(i_end - i_start)
@@ -204,6 +208,7 @@ class TileStitcher:
         self.image_stitched = None
         self.position_list = None
         self.flip_lr = False
+        self.flip_final_image = True
         self.name_prefix = 'pred_phase_'
 
     def build(self):
@@ -234,7 +239,7 @@ class TileStitcher:
         """
         pos = self.position_list.array
         data = self.images
-        psize_m = self.position_list.psize_nm * 1e-9
+        psize_m = self.position_list.psize_nm * 1e-9 if self.position_list.original_unit != 'pixel' else 1.0
         pos_x = pos[:, 1]
         pos_y = pos[:, 0]
         margin_m = [(self.images[0].shape[i] // 2 + 10) * psize_m for i in range(2)]
@@ -261,4 +266,6 @@ class TileStitcher:
             tmp = find_pha(x, y)
             cnt += tmp != 0
             self.image_stitched += tmp
-        self.image_stitched = (self.image_stitched / np.maximum(cnt, cnt1))[:, ::-1]
+        self.image_stitched = (self.image_stitched / np.maximum(cnt, cnt1))
+        if self.flip_final_image:
+            self.image_stitched = self.image_stitched[:, ::-1]
