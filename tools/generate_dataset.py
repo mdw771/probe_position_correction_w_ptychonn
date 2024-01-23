@@ -20,6 +20,10 @@ logger = logging
 logger.basicConfig(format='[%(asctime)s] %(message)s', level=logging.INFO)
 
 
+class ReconDataNotFoundError(Exception):
+    pass
+
+
 class DatasetGenerator:
 
     def __init__(self, data_path, label_path, output_path='./data_train.h5', target_shape=(128, 128),
@@ -110,8 +114,8 @@ class DatasetGenerator:
         self.z_label += label_ph.shape[0]
 
     def write_positions(self, params):
-        pos = params['pos_px']
-        self.f_out['metadata'].create_dataset('pos_px', data=pos)
+        pos = params['pos_m']
+        self.f_out['metadata'].create_dataset('pos_m', data=pos)
 
     def finish_output_file(self):
         self.f_out['data/reciprocal'].resize([self.z_data, *self.target_shape])
@@ -217,6 +221,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
                  subtract_data_mean=False, standardize_labels_across_samples=True,
                  transform_func=None, transform_func_kwargs=None, mode='train',
                  transform_positions_to_snake_path=True,
+                 allow_using_reconstructions_with_different_psize=False,
                  *args, **kwargs):
         """
         Generate data from the HDF5 files used by PtychoShelves.
@@ -238,6 +243,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         self.scan_indices = []
         self.transform_positions_to_snake_path = transform_positions_to_snake_path
         self.subtract_data_mean = subtract_data_mean
+        self.allow_using_reconstructions_with_different_psize = allow_using_reconstructions_with_different_psize
         assert self.data_path == self.label_path, 'data_path and label_path for PtychoShelves data should be the same.'
 
     def build_scan_indices(self):
@@ -287,25 +293,24 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
             return h5s, s
         return h5s
 
-    def convert_x_pos_to_snake_pattern(self, pos_x, nx):
-        i = 0
-        ir = 0
-        while i < len(pos_x):
-            if ir % 2 == 1:
-                pos_x[i:i + nx] = pos_x[i:i + nx][::-1]
-            i += nx
-            ir += 1
-        return pos_x
-
-    def convert_diffraction_data_to_snake_pattern(self, data, nx):
-        i = 0
-        ir = 0
-        while i < len(data):
-            if ir % 2 == 1:
-                data[i:i + nx] = data[i:i + nx][::-1, :, :]
-            i += nx
-            ir += 1
-        return data
+    @staticmethod
+    def get_snake_patter_reordering_indices(pos):
+        inds = []
+        y_pos = pos[:, 0]
+        pos_grad = y_pos[1:] - y_pos[:-1]
+        pos_grad = np.abs(pos_grad)
+        new_line_ind = np.where(pos_grad > 0.5)[0] + 1
+        new_line_ind = np.concatenate([[0], new_line_ind, [len(pos)]])
+        row = 0
+        while True:
+            if row % 2 == 0:
+                inds += list(range(new_line_ind[row], new_line_ind[row + 1]))
+            else:
+                inds += list(range(new_line_ind[row + 1] - 1, new_line_ind[row] - 1, -1))
+            if row == len(new_line_ind) - 2:
+                break
+            row += 1
+        return inds
 
     def get_parameters(self, scan_idx):
         scan_folder = os.path.join(self.data_path, 'fly{:03}'.format(scan_idx))
@@ -316,21 +321,38 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         pos_y_m = f_param['ppY'][...]
         nx = f_param['N_scan_x'][0]
         ny = f_param['N_scan_y'][0]
-        if self.transform_positions_to_snake_path:
-            pos_x_m = self.convert_x_pos_to_snake_pattern(pos_x_m, nx)
         params = {}
-        params['psize_nm'] = psize_m * 1e9
-        params['pos_px'] = np.stack([pos_y_m, pos_x_m], axis=-1) / psize_m
+        params['nominal_psize_nm'] = psize_m * 1e9
+        params['psize_nm'] = params['nominal_psize_nm']
+        params['pos_m'] = np.stack([pos_y_m, pos_x_m], axis=-1)
+        params['pos_px'] = params['pos_m'] / psize_m
+        params['reordering_indices'] = list(range(len(pos_y_m)))
+        if self.transform_positions_to_snake_path:
+            params['reordering_indices'] = self.get_snake_patter_reordering_indices(params['pos_px'])
+            params['pos_m'] = np.take(params['pos_m'], params['reordering_indices'], axis=0)
+            params['pos_px'] = np.take(params['pos_px'], params['reordering_indices'], axis=0)
+        params['nominal_probe_size'] = s
         params['probe_size'] = s
         params['nx'] = nx
         params['indices_to_keep'] = list(range(len(pos_y_m)))
         return params
 
-    def clean_data(self, data):
+    def clean_data(self, data, do_percentile_thresholding=True):
         data_mean = np.mean(data, axis=0)
-        # data_std = np.std(data, axis=0)
         data[data > data_mean * 80] = 0
-        data[data > 120000] = 0
+        if do_percentile_thresholding:
+            thrsh1 = np.percentile(data, 99.99999)
+            thrsh2 = np.percentile(data, 99.99)
+            if thrsh1 > thrsh2 * 4:
+                thrsh = np.percentile(data, 99.9995)
+                data[data > thrsh] = 0
+        return data
+
+    def clean_data_std(self, data, sigma_multiple=10):
+        data_mean = np.mean(data, axis=0)
+        data_std = np.std(data, axis=0)
+        mask = (data > data_mean - sigma_multiple * data_std) * (data > data_mean + sigma_multiple * data_std)
+        data[mask] = np.tile(data_mean, [data.shape[0], 1, 1])[mask]
         return data
 
     def get_diffraction_data(self, scan_idx, params):
@@ -339,7 +361,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         f_dp = h5py.File(f_dp, 'r')
         logger.info('Loading diffraction data...')
         dat = f_dp['dp'][...]
-        psize_nm = params['psize_nm']
+        psize_nm = params['nominal_psize_nm']
         logger.info('Transforming diffraction data...')
         if not np.allclose(dat.shape[1:], self.target_shape):
             orig_shape = dat.shape[1:]
@@ -347,23 +369,29 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
             psize_nm = psize_nm / np.mean(self.target_shape / np.array(orig_shape))
         dat = self.rescale_diffraction_data_to_match_pixel_size(dat, psize_nm, self.target_psize_nm)
         if self.transform_positions_to_snake_path:
-            dat = self.convert_diffraction_data_to_snake_pattern(dat, params['nx'])
+            dat = np.take(dat, params['reordering_indices'], axis=0)
         dat = dat[params['indices_to_keep']]
         if self.debug:
             tifffile.imwrite(os.path.join(self.debug_dir, 'data_raw_{:03}.tiff'.format(scan_idx)), dat)
         dat = self.clean_data(dat)
+        if self.debug:
+            tifffile.imwrite(os.path.join(self.debug_dir, 'data_cleaned_{:03}.tiff'.format(scan_idx)), dat)
         if self.subtract_data_mean:
             dat = dat - np.mean(dat, axis=0)
         if self.standardize_data:
             # dat = (dat - np.mean(dat, axis=(1, 2), keepdims=True)) / (np.std(dat, axis=(1, 2), keepdims=True) + 1e-3)
             dat = (dat - np.mean(dat)) / np.std(dat)
+        dat = self.clean_data_std(dat, sigma_multiple=20)
         if self.debug:
             tifffile.imwrite(os.path.join(self.debug_dir, 'data_{:03}.tiff'.format(scan_idx)), dat)
         return dat
 
     def get_probe(self, scan_idx, params):
-        recon_file = self.get_reconstruction_filename(scan_idx,
-                                                      relax_name_consistency_requirement=(self.mode == 'test'))
+        recon_file, params = self.get_reconstruction_filename(scan_idx, params,
+                                                      relax_name_consistency_requirement=(
+                                                              self.mode == 'test' or
+                                                              self.allow_using_reconstructions_with_different_psize)
+                                                      )
         probe = self.get_probe_function_from_mat_file(recon_file)
         probe = np.transpose(probe, [2, 3, 0, 1])
         orig_arr_shape = probe.shape
@@ -381,7 +409,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         if self.debug:
             np.save(os.path.join(self.debug_dir, 'probe_{:03}.npy'.format(scan_idx)), probe)
 
-    def get_reconstruction_filename(self, scan_idx, relax_name_consistency_requirement=False):
+    def get_reconstruction_filename(self, scan_idx, params, relax_name_consistency_requirement=False):
         """
         Find the path to the reconstruction *.mat file with the largest number of iterations.
         """
@@ -395,14 +423,25 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
             print(glob.glob(os.path.join(roi_folder, 'ML*')))
             if relax_name_consistency_requirement:
                 recon_folder = glob.glob(os.path.join(roi_folder, 'ML*'))[0]
+                print('Using {} instead.'.format(recon_folder))
+                s = int(re.findall(r'Ndp(\d+)', recon_folder)[-1])
+                print('DP size for this reconstruction is {}.'.format(s))
+                if params['nominal_probe_size'] == params['probe_size']:
+                    new_psize = params['psize_nm'] * (params['nominal_probe_size'] / s)
+                    print('Modifying probe size, pixel size, and positions in pixel:')
+                    print('    probe_size {} -> {}'.format(params['probe_size'], s))
+                    print('    psize_nm {} -> {}'.format(params['psize_nm'], new_psize))
+                    params['probe_size'] = s
+                    params['psize_nm'] = new_psize
+                    params['pos_px'] = params['pos_m'] / (new_psize * 1e-9)
             else:
-                raise ValueError
+                raise ReconDataNotFoundError
         mat_files = glob.glob(os.path.join(recon_folder, 'Niter*.mat'))
         ns = [int(re.findall(r'\d+', x)[-1]) for x in mat_files]
         ns.sort()
         n = ns[-1]
         recon_file = os.path.join(recon_folder, 'Niter{}.mat'.format(n))
-        return recon_file
+        return recon_file, params
 
 
     def get_probe_function_from_mat_file(self, filename):
@@ -425,8 +464,11 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         return obj
 
     def process_positions(self, scan_idx, params, filter_positions=True):
-        recon_file = self.get_reconstruction_filename(scan_idx,
-                                                      relax_name_consistency_requirement=(self.mode == 'test'))
+        recon_file, params = self.get_reconstruction_filename(scan_idx, params,
+                                                      relax_name_consistency_requirement=(
+                                                              self.mode == 'test' or
+                                                              self.allow_using_reconstructions_with_different_psize)
+                                                      )
         obj = np.angle(self.get_object_function_from_mat_file(recon_file))
         pos = params['pos_px']
         offset_pos = self.offset_positions(pos, obj.shape)
@@ -445,7 +487,11 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
 
     def get_labels(self, scan_idx, params):
         scan_folder = os.path.join(self.data_path, 'fly{:03}'.format(scan_idx))
-        recon_file = self.get_reconstruction_filename(scan_idx)
+        recon_file, params = self.get_reconstruction_filename(scan_idx, params,
+                                                      relax_name_consistency_requirement=(
+                                                         self.mode == 'test' or
+                                                         self.allow_using_reconstructions_with_different_psize)
+                                                     )
         obj = self.get_object_function_from_mat_file(recon_file)
         pos = params['pos_px']
         logger.info('Extracting object tiles...')
@@ -516,19 +562,26 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         self.finish_output_file()
 
     def run_generate_training_data(self):
+        # self.scan_indices = [66]
         for i_scan, scan_idx in enumerate(self.scan_indices):
-            logger.info('({}/{}) Scan index = {}'.format(i_scan + 1, len(self.scan_indices), scan_idx))
-            params = self.get_parameters(scan_idx)
-            params = self.process_positions(scan_idx, params)
-            if len(params['indices_to_keep']) == 0:
-                logging.warning('No positions are left after filtering.')
-                continue
-            if self.debug:
-                self.get_probe(scan_idx, params)
-            data = self.get_diffraction_data(scan_idx, params)
-            labels_ph, labels_mag = self.get_labels(scan_idx, params)
-            self.write_diffraction_data(data)
-            self.write_label(labels_ph, labels_mag)
+            try:
+                logger.info('({}/{}) Scan index = {}'.format(i_scan + 1, len(self.scan_indices), scan_idx))
+                params = self.get_parameters(scan_idx)
+                params = self.process_positions(scan_idx, params)
+                if len(params['indices_to_keep']) == 0:
+                    logging.warning('No positions are left after filtering.')
+                    continue
+                if self.debug:
+                    try:
+                        self.get_probe(scan_idx, params)
+                    except:
+                        print('Could not get probe function for scan index {}.'.format(scan_idx))
+                data = self.get_diffraction_data(scan_idx, params)
+                labels_ph, labels_mag = self.get_labels(scan_idx, params)
+                self.write_diffraction_data(data)
+                self.write_label(labels_ph, labels_mag)
+            except ReconDataNotFoundError:
+                print('Skipping scan index {}.'.format(scan_idx))
 
     def run_generate_test_data(self):
         for i_scan, scan_idx in enumerate(self.scan_indices):
@@ -560,8 +613,8 @@ if __name__ == '__main__':
     target_shape = (128, 128)
     # gen = FromPtychoShelvesDatasetGenerator(data_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/results/ML_recon',
     #                                         label_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/results/ML_recon',
-    #                                         output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_train_std_meanSub_data_std_labels.h5',
-    #                                         # output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_77.h5',
+    #                                         output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_train_std_meanSub_data_std_labels_large.h5',
+    #                                         # output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/test.h5',
     #                                         target_shape=target_shape,
     #                                         target_psize_nm=20,
     #                                         transform_func=transform,
@@ -569,7 +622,9 @@ if __name__ == '__main__':
     #                                         standardize_data=True,
     #                                         # standardize_data=False,
     #                                         subtract_data_mean=True,
-    #                                         standardize_labels_across_samples=True)
+    #                                         standardize_labels_across_samples=True,
+    #                                         allow_using_reconstructions_with_different_psize=True,
+    #                                         transform_positions_to_snake_path=False)
     gen = FromPtychoShelvesDatasetGenerator(data_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/results/ML_recon',
                                             label_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/results/ML_recon',
                                             output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/data_085.h5',
@@ -583,7 +638,7 @@ if __name__ == '__main__':
                                             subtract_data_mean=True,
                                             standardize_labels_across_samples=True,
                                             mode='test',
-                                            transform_positions_to_snake_path=False)
+                                            transform_positions_to_snake_path=True)
     gen.debug = True
     gen.build()
     gen.run()
