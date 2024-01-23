@@ -26,7 +26,8 @@ dependencies = [
     "torchvision",
     "torchinfo",
     "torchsummary",
-    "pandas"
+    "pandas",
+    "h5py"
 ]
 version = "0.0.1"
 
