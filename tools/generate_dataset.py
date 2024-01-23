@@ -25,6 +25,7 @@ class DatasetGenerator:
     def __init__(self, data_path, label_path, output_path='./data_train.h5', target_shape=(128, 128),
                  target_psize_nm=20, standardize_data=True, standardize_labels=True,
                  data_dtype='float32', label_dtype='float32', transform_func=None, transform_func_kwargs=None,
+                 mode='train',
                  *args, **kwargs):
         self.data_path = data_path
         self.label_path = label_path
@@ -41,6 +42,7 @@ class DatasetGenerator:
         self.transform_func_kwargs = {} if transform_func_kwargs is None else transform_func_kwargs
         self.z_data = 0
         self.z_label = 0
+        self.mode = mode
         self.debug_dir = os.path.join(os.path.dirname(self.output_path), 'dataset_generator_debug')
         self.debug = False
 
@@ -107,6 +109,10 @@ class DatasetGenerator:
         self.f_out['data/real_magnitude'][self.z_label:self.z_label + label_mag.shape[0]] = label_mag
         self.z_label += label_ph.shape[0]
 
+    def write_positions(self, params):
+        pos = params['pos_px']
+        self.f_out['metadata'].create_dataset('pos_px', data=pos)
+
     def finish_output_file(self):
         self.f_out['data/reciprocal'].resize([self.z_data, *self.target_shape])
         self.f_out['data/real_phase'].resize([self.z_label, *self.target_shape])
@@ -123,7 +129,7 @@ class BNPDatasetGenerator(DatasetGenerator):
 
     def __init__(self, data_path, label_path, mda_path, output_path='./data_train.h5',
                  target_shape=(256, 256), target_psize_nm=20, standardize_data=True, standardize_labels=True,
-                 transform_func=None, transform_func_kwargs=None,
+                 transform_func=None, transform_func_kwargs=None, mode='train',
                  *args, **kwargs):
         """
         For generating datasets from Bionanoprobe's ptychography data.
@@ -136,6 +142,7 @@ class BNPDatasetGenerator(DatasetGenerator):
                          standardize_data=standardize_data, standardize_labels=standardize_labels,
                          transform_func=transform_func,
                          transform_func_kwargs=transform_func_kwargs,
+                         mode=mode,
                          *args, **kwargs)
         self.mda_path = mda_path
         self.scan_indices = []
@@ -208,7 +215,8 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
     def __init__(self, data_path, label_path, output_path='./data_train.h5',
                  target_shape=(256, 256), target_psize_nm=20, standardize_data=True,
                  subtract_data_mean=False, standardize_labels_across_samples=True,
-                 transform_func=None, transform_func_kwargs=None,
+                 transform_func=None, transform_func_kwargs=None, mode='train',
+                 transform_positions_to_snake_path=True,
                  *args, **kwargs):
         """
         Generate data from the HDF5 files used by PtychoShelves.
@@ -225,8 +233,10 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
                          standardize_labels=standardize_labels_across_samples,
                          transform_func=transform_func,
                          transform_func_kwargs=transform_func_kwargs,
+                         mode=mode,
                          *args, **kwargs)
         self.scan_indices = []
+        self.transform_positions_to_snake_path = transform_positions_to_snake_path
         self.subtract_data_mean = subtract_data_mean
         assert self.data_path == self.label_path, 'data_path and label_path for PtychoShelves data should be the same.'
 
@@ -306,7 +316,8 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         pos_y_m = f_param['ppY'][...]
         nx = f_param['N_scan_x'][0]
         ny = f_param['N_scan_y'][0]
-        pos_x_m = self.convert_x_pos_to_snake_pattern(pos_x_m, nx)
+        if self.transform_positions_to_snake_path:
+            pos_x_m = self.convert_x_pos_to_snake_pattern(pos_x_m, nx)
         params = {}
         params['psize_nm'] = psize_m * 1e9
         params['pos_px'] = np.stack([pos_y_m, pos_x_m], axis=-1) / psize_m
@@ -335,7 +346,8 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
             dat = self.crop_data_to_target_shape(dat, self.target_shape)
             psize_nm = psize_nm / np.mean(self.target_shape / np.array(orig_shape))
         dat = self.rescale_diffraction_data_to_match_pixel_size(dat, psize_nm, self.target_psize_nm)
-        dat = self.convert_diffraction_data_to_snake_pattern(dat, params['nx'])
+        if self.transform_positions_to_snake_path:
+            dat = self.convert_diffraction_data_to_snake_pattern(dat, params['nx'])
         dat = dat[params['indices_to_keep']]
         if self.debug:
             tifffile.imwrite(os.path.join(self.debug_dir, 'data_raw_{:03}.tiff'.format(scan_idx)), dat)
@@ -350,7 +362,8 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         return dat
 
     def get_probe(self, scan_idx, params):
-        recon_file = self.get_reconstruction_filename(scan_idx)
+        recon_file = self.get_reconstruction_filename(scan_idx,
+                                                      relax_name_consistency_requirement=(self.mode == 'test'))
         probe = self.get_probe_function_from_mat_file(recon_file)
         probe = np.transpose(probe, [2, 3, 0, 1])
         orig_arr_shape = probe.shape
@@ -361,7 +374,6 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
             probe_real = ndi.zoom(probe.real, [1, target_shape[0] / orig_shape[0], target_shape[1] / orig_shape[1]])
             probe_imag = ndi.zoom(probe.imag, [1, target_shape[0] / orig_shape[0], target_shape[1] / orig_shape[1]])
             probe = probe_real + 1j * probe_imag
-
             psize_nm = psize_nm / np.mean(self.target_shape / np.array(orig_shape))
         probe = self.rescale_diffraction_data_to_match_pixel_size(probe, psize_nm, self.target_psize_nm)
         probe = np.reshape(probe, [*orig_arr_shape[:2], *self.target_shape])
@@ -369,7 +381,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         if self.debug:
             np.save(os.path.join(self.debug_dir, 'probe_{:03}.npy'.format(scan_idx)), probe)
 
-    def get_reconstruction_filename(self, scan_idx):
+    def get_reconstruction_filename(self, scan_idx, relax_name_consistency_requirement=False):
         """
         Find the path to the reconstruction *.mat file with the largest number of iterations.
         """
@@ -380,8 +392,11 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
             recon_folder = glob.glob(os.path.join(roi_folder, 'ML*Ndp{}*'.format(s)))[0]
         except:
             print('Was looking for ML*Ndp{}*, but only the following are available:'.format(s))
-            print(glob.glob(os.path.join(roi_folder, 'ML*Ndp{}*'.format(s))))
-            raise ValueError
+            print(glob.glob(os.path.join(roi_folder, 'ML*')))
+            if relax_name_consistency_requirement:
+                recon_folder = glob.glob(os.path.join(roi_folder, 'ML*'))[0]
+            else:
+                raise ValueError
         mat_files = glob.glob(os.path.join(recon_folder, 'Niter*.mat'))
         ns = [int(re.findall(r'\d+', x)[-1]) for x in mat_files]
         ns.sort()
@@ -409,13 +424,18 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         # obj = np.transpose(obj)
         return obj
 
-    def process_positions(self, scan_idx, params):
-        recon_file = self.get_reconstruction_filename(scan_idx)
+    def process_positions(self, scan_idx, params, filter_positions=True):
+        recon_file = self.get_reconstruction_filename(scan_idx,
+                                                      relax_name_consistency_requirement=(self.mode == 'test'))
         obj = np.angle(self.get_object_function_from_mat_file(recon_file))
         pos = params['pos_px']
         offset_pos = self.offset_positions(pos, obj.shape)
-        # Only keep positions that have enough overlap.
-        filtered_pos, pos_indices_to_keep = self.filter_positions(offset_pos, params, obj.shape)
+        if filter_positions:
+            # Only keep positions that have enough overlap.
+            filtered_pos, pos_indices_to_keep = self.filter_positions(offset_pos, params, obj.shape)
+        else:
+            filtered_pos = offset_pos
+            pos_indices_to_keep = np.arange(len(filtered_pos)).astype(int)
         params['pos_px'] = filtered_pos
         params['indices_to_keep'] = pos_indices_to_keep
         if self.debug:
@@ -487,10 +507,15 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         pos = pos - pos[0] + offset
         return pos
 
-    def run(self):
+    def run(self, mode='train'):
         self.write_metadata()
+        if self.mode == 'train':
+            self.run_generate_training_data()
+        elif self.mode == 'test':
+            self.run_generate_test_data()
+        self.finish_output_file()
 
-        # self.scan_indices = [77]
+    def run_generate_training_data(self):
         for i_scan, scan_idx in enumerate(self.scan_indices):
             logger.info('({}/{}) Scan index = {}'.format(i_scan + 1, len(self.scan_indices), scan_idx))
             params = self.get_parameters(scan_idx)
@@ -504,7 +529,25 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
             labels_ph, labels_mag = self.get_labels(scan_idx, params)
             self.write_diffraction_data(data)
             self.write_label(labels_ph, labels_mag)
-        self.finish_output_file()
+
+    def run_generate_test_data(self):
+        for i_scan, scan_idx in enumerate(self.scan_indices):
+            logger.info('({}/{}) Scan index = {}'.format(i_scan + 1, len(self.scan_indices), scan_idx))
+            params = self.get_parameters(scan_idx)
+            params = self.process_positions(scan_idx, params, filter_positions=False)
+            if len(params['indices_to_keep']) == 0:
+                logging.warning('No positions are left after filtering.')
+                continue
+            if self.debug:
+                self.get_probe(scan_idx, params)
+            data = self.get_diffraction_data(scan_idx, params)
+            self.write_diffraction_data(data)
+            self.write_positions(params)
+            try:
+                labels_ph, labels_mag = self.get_labels(scan_idx, params)
+                self.write_label(labels_ph, labels_mag)
+            except:
+                print('Could not generate ground truths for test data.')
 
 if __name__ == '__main__':
     def transform(img, target_shape=(128, 128), center=(268, 503)):
@@ -515,9 +558,21 @@ if __name__ == '__main__':
         return img
 
     target_shape = (128, 128)
-    gen = FromPtychoShelvesDatasetGenerator(data_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/results/ML_recon',
-                                            label_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/results/ML_recon',
-                                            output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_train_std_meanSub_data_std_labels.h5',
+    # gen = FromPtychoShelvesDatasetGenerator(data_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/results/ML_recon',
+    #                                         label_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/results/ML_recon',
+    #                                         output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_train_std_meanSub_data_std_labels.h5',
+    #                                         # output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_77.h5',
+    #                                         target_shape=target_shape,
+    #                                         target_psize_nm=20,
+    #                                         transform_func=transform,
+    #                                         transform_func_kwargs={'target_shape': target_shape},
+    #                                         standardize_data=True,
+    #                                         # standardize_data=False,
+    #                                         subtract_data_mean=True,
+    #                                         standardize_labels_across_samples=True)
+    gen = FromPtychoShelvesDatasetGenerator(data_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/results/ML_recon',
+                                            label_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/results/ML_recon',
+                                            output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/data_085.h5',
                                             # output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_77.h5',
                                             target_shape=target_shape,
                                             target_psize_nm=20,
@@ -526,7 +581,9 @@ if __name__ == '__main__':
                                             standardize_data=True,
                                             # standardize_data=False,
                                             subtract_data_mean=True,
-                                            standardize_labels_across_samples=True)
+                                            standardize_labels_across_samples=True,
+                                            mode='test',
+                                            transform_positions_to_snake_path=False)
     gen.debug = True
     gen.build()
     gen.run()
