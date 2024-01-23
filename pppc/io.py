@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from skimage.transform import resize
 import tifffile
+import h5py
 
 from pppc.util import class_timeit
 from pppc.helper import transform_data_for_ptychonn
@@ -96,6 +97,13 @@ self
             i_end = min(i_start + batch_size, self.num_dps)
         self.array = new_arr
 
+    @staticmethod
+    def take_from_3d_array(arr, ind):
+        if hasattr(ind, '__len__'):
+            return np.take(arr[...], ind, axis=0)
+        else:
+            return arr[ind, :, :]
+
 
 class VirtualDataFileHandle(DataFileHandle):
 
@@ -122,10 +130,20 @@ class NPZFileHandle(DataFileHandle):
         self.shape = self.array.shape
 
     def get_dp_by_consecutive_index(self, ind):
-        if hasattr(ind, '__len__'):
-            return np.take(self.array, ind, axis=0)
-        else:
-            return self.array[ind, :, :]
+        self.take_from_3d_array(self.array, ind)
+
+
+class HDF5FileHandle(DataFileHandle):
+
+    def __init__(self, file_path):
+        super().__init__(file_path)
+        self.f = h5py.File(self.file_path, 'r')
+        self.array = self.f['data/reciprocal'][...]
+        self.num_dps = self.array.shape[0]
+        self.shape = self.array.shape
+
+    def get_dp_by_consecutive_index(self, ind):
+        self.take_from_3d_array(self.array, ind)
 
 
 def create_data_file_handle(file_path) -> DataFileHandle:
