@@ -254,6 +254,10 @@ class PtychoNNTrainer:
             except:
                 logger.warning('Model summary could not be generated.')
 
+        if self.config_dict['pretrained_model_path'] is not None:
+            logger.info('Loading pretrained model from {}.'.format(self.config_dict['pretrained_model_path']))
+            self.model.load_state_dict(torch.load(self.config_dict['pretrained_model_path']))
+
         if self.device.type == 'cuda' and self.num_gpus > 1:
             self.model = nn.DataParallel(self.model)
             logger.info('Using DataParallel with {} devices.'.format(self.num_gpus))
@@ -339,9 +343,14 @@ class PtychoNNTrainer:
                 ax[i].set_title(name_list[i])
         plt.show()
 
-    def run_testing(self, ind_list, dataset='train'):
+    def run_testing(self, ind_list, dataset='train', external_dataset=None):
         self.model.eval()
-        dset = self.training_dataset if dataset == 'train' else self.validation_dataset
+        if dataset == 'train':
+            dset = self.training_dataset
+        elif dataset == 'validation':
+            dset = self.validation_dataset
+        elif dataset == 'external':
+            dset = external_dataset
         dp_list, true_amp, true_ph = dset.__getitems__(ind_list)
         dp_list.to(self.device)
         pred_amp, pred_ph = self.model(dp_list)

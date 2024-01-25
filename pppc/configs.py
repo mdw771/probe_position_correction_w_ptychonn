@@ -146,4 +146,5 @@ class PtychoNNTrainingConfigDict(TrainingConfigDict):
         self['loss_function'] = None  # Can be None (default to L1Loss) or a Callable.
         self['dataset_decimation_ratio'] = 1
         self['schedule_learning_rate'] = True
+        self['pretrained_model_path'] = None
 
