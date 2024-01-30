@@ -182,17 +182,18 @@ class BNPDatasetGenerator(DatasetGenerator):
         self.build_data_shape()
         self.initialize_output_file()
 
-    def get_probe_positions_from_mda(self, fname, offset=(0, 0)):
+    @staticmethod
+    def get_probe_positions_from_mda(fname, offset=(0, 0)):
         import sys
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'utils'))
         import readMDA
         mda_data = readMDA.readMDA(fname)
         y_pos = np.array(mda_data[1].p[0].data)
         x_pos = np.array(mda_data[2].p[0].data)[0]
-        xx, yy = np.meshgrid(y_pos, x_pos)
+        xx, yy = np.meshgrid(x_pos, y_pos)
         # Reverse x on even rows to form snake pattern
-        for i in range(1, xx.shape[0], 2):
-            xx[i, :] = xx[i, ::-1]
+        # for i in range(1, xx.shape[0], 2):
+        #     xx[i, :] = xx[i, ::-1]
         yy = yy - yy[0, 0] + offset[0]
         xx = xx - xx[0, 0] + offset[1]
         y = yy.reshape(-1)
@@ -222,6 +223,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
                  transform_func=None, transform_func_kwargs=None, mode='train',
                  transform_positions_to_snake_path=True,
                  allow_using_reconstructions_with_different_psize=False,
+                 subselect=None,
                  *args, **kwargs):
         """
         Generate data from the HDF5 files used by PtychoShelves.
@@ -244,6 +246,10 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         self.transform_positions_to_snake_path = transform_positions_to_snake_path
         self.subtract_data_mean = subtract_data_mean
         self.allow_using_reconstructions_with_different_psize = allow_using_reconstructions_with_different_psize
+        if subselect is None:
+            self.subselect = slice(None)
+        else:
+            self.subselect = slice(subselect[0], subselect[1])
         assert self.data_path == self.label_path, 'data_path and label_path for PtychoShelves data should be the same.'
 
     def build_scan_indices(self):
@@ -294,7 +300,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         return h5s
 
     @staticmethod
-    def get_snake_patter_reordering_indices(pos):
+    def get_snake_pattern_reordering_indices(pos):
         inds = []
         y_pos = pos[:, 0]
         pos_grad = y_pos[1:] - y_pos[:-1]
@@ -317,8 +323,8 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         f_param, s = self.choose_h5_file(scan_folder, type='para', return_size=True)
         f_param = h5py.File(f_param, 'r')
         psize_m = f_param['dx'][0]
-        pos_x_m = f_param['ppX'][...]
-        pos_y_m = f_param['ppY'][...]
+        pos_x_m = f_param['ppX'][...][self.subselect]
+        pos_y_m = f_param['ppY'][...][self.subselect]
         nx = f_param['N_scan_x'][0]
         ny = f_param['N_scan_y'][0]
         params = {}
@@ -328,7 +334,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         params['pos_px'] = params['pos_m'] / psize_m
         params['reordering_indices'] = list(range(len(pos_y_m)))
         if self.transform_positions_to_snake_path:
-            params['reordering_indices'] = self.get_snake_patter_reordering_indices(params['pos_px'])
+            params['reordering_indices'] = self.get_snake_pattern_reordering_indices(params['pos_px'])
             params['pos_m'] = np.take(params['pos_m'], params['reordering_indices'], axis=0)
             params['pos_px'] = np.take(params['pos_px'], params['reordering_indices'], axis=0)
         params['nominal_probe_size'] = s
@@ -360,7 +366,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         f_dp = self.choose_h5_file(scan_folder, type='dp')
         f_dp = h5py.File(f_dp, 'r')
         logger.info('Loading diffraction data...')
-        dat = f_dp['dp'][...]
+        dat = f_dp['dp'][...][self.subselect]
         psize_nm = params['nominal_psize_nm']
         logger.info('Transforming diffraction data...')
         if not np.allclose(dat.shape[1:], self.target_shape):
@@ -562,7 +568,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         self.finish_output_file()
 
     def run_generate_training_data(self):
-        # self.scan_indices = [66]
+        # self.scan_indices = [74, 75, 88, 89, 97]
         for i_scan, scan_idx in enumerate(self.scan_indices):
             try:
                 logger.info('({}/{}) Scan index = {}'.format(i_scan + 1, len(self.scan_indices), scan_idx))
@@ -613,7 +619,7 @@ if __name__ == '__main__':
     target_shape = (128, 128)
     # gen = FromPtychoShelvesDatasetGenerator(data_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/results/ML_recon',
     #                                         label_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/results/ML_recon',
-    #                                         output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_train_std_meanSub_data_std_labels_large.h5',
+    #                                         output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_train_std_meanSub_data_std_labels_dense.h5',
     #                                         # output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/test.h5',
     #                                         target_shape=target_shape,
     #                                         target_psize_nm=20,
@@ -638,7 +644,8 @@ if __name__ == '__main__':
                                             subtract_data_mean=True,
                                             standardize_labels_across_samples=True,
                                             mode='test',
-                                            transform_positions_to_snake_path=True)
+                                            transform_positions_to_snake_path=True,
+                                            subselect=(16774, 23853))
     gen.debug = True
     gen.build()
     gen.run()
