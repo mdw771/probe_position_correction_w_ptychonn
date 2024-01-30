@@ -57,17 +57,18 @@ class Registrator:
 
 
 class RegistrationAlgorithm:
-    def __init__(self, tol=0.3, *args, **kwargs):
+    def __init__(self, tol=0.3, min_roi_stddev=0.2, *args, **kwargs):
         self.status_dict = {'ok': 0, 'questionable': 1, 'bad': 2, 'empty': 3}
         self.status = 0
         self.random_seed = 123
         self.tol = tol
+        self.min_roi_stddev = min_roi_stddev
         self.debug = False
 
     def run(self, previous, current, *args, **kwargs):
         pass
 
-    def check_offset_quality(self, prev, curr, offset, update_status=True, tol=0.3):
+    def check_offset_quality(self, prev, curr, offset, update_status=True, tol=0.3, min_roi_stddev=0.2):
         image_offset = -offset
         prev_shifted = np.fft.ifft2(ndi.fourier_shift(np.fft.fft2(prev), image_offset)).real
 
@@ -89,8 +90,9 @@ class RegistrationAlgorithm:
         else:
             # There should be enough variance in the analysis region for the result to be reliable.
             std_roi = np.std(curr[sy:ey, sx:ex])
-            if std_roi < 0.2:
-                logger.info('Error is low ({}) but variance is also low within the ROI ({}).'.format(error, std_roi))
+            if std_roi < min_roi_stddev:
+                logger.info('Error is low ({}) but stddev is also low within the ROI ({}; threshold: {}).'.format(
+                    error, std_roi, min_roi_stddev))
                 self.status = self.status_dict['questionable']
                 # fig, ax = plt.subplots(1, 2, figsize=(8, 4))
                 # ax[0].imshow(prev_shifted[sy:ey, sx:ex])
@@ -116,21 +118,23 @@ class RegistrationAlgorithm:
 
 class HybridRegistrationAlgorithm(RegistrationAlgorithm):
     def __init__(self, algs=('error_map_multilevel', 'error_map_expandable', 'sift'), tols=(0.08, 0.3, 0.3),
-                 max_shift=7, *args, **kwargs):
+                 min_roi_stddev=0.2, max_shift=7, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.alg_list = []
         self.alg_names = algs
         for i, alg in enumerate(algs):
             if alg == 'error_map_multilevel':
                 self.alg_list.append(
-                    ErrorMapRegistrationAlgorithm(subpixel=False, max_shift=max_shift, n_levels=3, tol=tols[i]))
+                    ErrorMapRegistrationAlgorithm(subpixel=False, max_shift=max_shift, n_levels=3, tol=tols[i],
+                                                  min_roi_stddev=min_roi_stddev))
             elif alg == 'error_map_expandable':
                 self.alg_list.append(
-                    ErrorMapRegistrationAlgorithm(subpixel=True, max_shift=max_shift, n_levels=1, tol=tols[i]))
+                    ErrorMapRegistrationAlgorithm(subpixel=True, max_shift=max_shift, n_levels=1, tol=tols[i],
+                                                  min_roi_stddev=min_roi_stddev))
             elif alg == 'sift':
                 self.alg_list.append(
                     SIFTRegistrationAlgorithm(outlier_removal_method='trial_error', boundary_exclusion_length=16,
-                                              tol=tols[i]))
+                                              tol=tols[i], min_roi_stddev=min_roi_stddev))
 
     def run(self, previous, current, *args, **kwargs):
         offset = None
@@ -208,7 +212,7 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
                 self.check_fitting_result(coeffs, min_error)
                 last_level_offset = offset
             self.check_offset(offset)
-            self.check_offset_quality(previous, current, offset, tol=self.tol)
+            self.check_offset_quality(previous, current, offset, tol=self.tol, min_roi_stddev=self.min_roi_stddev)
             if self.status == self.status_dict['ok'] or current_max_shift + 10 > self.max_shift:
                 finish = True
             else:
@@ -243,7 +247,7 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
                     logger.info('Result failed quality check, so I am increasing max shift to {}. (offset = {}, '
                                 'min_error = {})'.format(current_max_shift, offset, min_error))
         self.check_offset(offset)
-        self.check_offset_quality(previous, current, offset, tol=self.tol)
+        self.check_offset_quality(previous, current, offset, tol=self.tol, min_roi_stddev=self.min_roi_stddev)
         return offset
 
     def run_with_current_max_shift(self, previous, current, max_shift=None, y_range=None, x_range=None):
@@ -469,7 +473,7 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
         offset = np.mean(matched_points_prev - matched_points_curr, axis=0)
 
         # self.check_clustering_quality(outlier_removal_result)
-        self.check_offset_quality(previous, current, offset, tol=self.tol)
+        self.check_offset_quality(previous, current, offset, tol=self.tol, min_roi_stddev=self.min_roi_stddev)
         # fig, ax = plt.subplots(1, 1)
         # skimage.feature.plot_matches(ax, previous, current, keypoints_prev, keypoints_curr, matches)
         # plt.title('After')
@@ -611,7 +615,8 @@ class SIFTRegistrationAlgorithm(RegistrationAlgorithm):
             # If the offset is too large, the computed error would be inaccurate because there are too few pixels
             # after excluding wrap-around regions. Thus it should be skipped.
             if np.alltrue(np.abs(offset) < 0.6 * np.array(prev_image.shape)):
-                error = self.check_offset_quality(prev_image, current_image, offset, update_status=False)
+                error = self.check_offset_quality(prev_image, current_image, offset, update_status=False,
+                                                  min_roi_stddev=self.min_roi_stddev)
                 if error < error_threshold:
                     good_inds.append(i)
                     error_list.append(error)

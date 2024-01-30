@@ -88,6 +88,7 @@ class InferenceConfigDict(ConfigDict):
         self['hybrid_registration_algs'] = ['error_map_multilevel', 'error_map_expandable', 'sift']
         # Hybrid registration tolerances
         self['hybrid_registration_tols'] = [0.15, 0.3, 0.3]
+        self['min_roi_stddev'] = 0.2
 
         # ===== General configs =====
         self['dp_data_file_path'] = None

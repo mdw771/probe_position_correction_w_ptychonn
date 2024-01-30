@@ -150,6 +150,7 @@ class PtychoNNProbePositionCorrector:
                                        downsample=self.config_dict['registration_downsample'],
                                        algs=self.config_dict['hybrid_registration_algs'],
                                        tols=self.config_dict['hybrid_registration_tols'],
+                                       min_roi_stddev=self.config_dict['min_roi_stddev'],
                                        use_baseline_offsets_for_uncertain_pairs=self.config_dict[
                                            'use_baseline_offsets_for_uncertain_pairs'
                                        ])
