@@ -195,9 +195,13 @@ class DatasetInferencer:
                                               '{}_{}.tiff'.format(name_prefix, ind)),
                                  arr[i])
 
-    def convert_output_files_into_single_tiff(self, prefix):
+    def convert_output_files_into_single_tiff(self, prefix, delete_individual_files_after_complete=False):
         images = read_all_images(self.config_dict['prediction_output_path'], prefix + '_')
         tifffile.imwrite(os.path.join(self.config_dict['prediction_output_path'], '{}.tiff'.format(prefix)), images)
+        if delete_individual_files_after_complete:
+            flist_del = glob.glob(os.path.join(self.config_dict['prediction_output_path'], prefix + '_'))
+            for f in flist_del:
+                os.remove(f)
 
 
 class TileStitcher:
@@ -225,6 +229,11 @@ class TileStitcher:
                                                    convert_to_pixel=False)
 
     def build_image_array(self):
+        combined_tiff_fname = self.name_prefix if self.name_prefix[-1] != '_' else self.name_prefix[:-1]
+        combined_tiff_fname += '.tiff'
+        if os.path.exists(os.path.join(self.config_dict['prediction_output_path'], combined_tiff_fname)):
+            self.config_dict['prediction_output_path'] = (
+                os.path.join(self.config_dict['prediction_output_path'], combined_tiff_fname))
         if len(self.config_dict['prediction_output_path']) > 5 and \
                 self.config_dict['prediction_output_path'][-5:] == '.tiff':
             self.images = tifffile.imread(self.config_dict['prediction_output_path'])
