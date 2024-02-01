@@ -23,6 +23,7 @@ import matplotlib
 import pandas as pd
 
 from .model import *
+from .metrics import *
 from pppc.configs import TrainingConfigDict
 from pppc.message_logger import logger
 from pppc.util import set_all_random_seeds, get_gpu_memory
@@ -137,6 +138,18 @@ class PtychoNNTrainer:
             # Monitor phase loss but only within support (which may not be same as true amp)
             loss_p = self.loss_criterion(pred_phs, phs) if self.prediction_type['phase'] else 0.0
             loss = loss_a + loss_p  # Use equiweighted amps and phase
+
+            # Regularization terms
+            if self.config_dict['l1_weight'] > 0:
+                if self.prediction_type['mag']:
+                    loss = loss + self.config_dict['l1_weight'] * torch.mean(torch.abs(pred_amps))
+                if self.prediction_type['phase']:
+                    loss = loss + self.config_dict['l1_weight'] * torch.mean(torch.abs(pred_phs))
+            if self.config_dict['tv_weight'] > 0:
+                if self.prediction_type['mag']:
+                    loss = loss + self.config_dict['tv_weight'] * total_variation(pred_amps)
+                if self.prediction_type['phase']:
+                    loss = loss + self.config_dict['tv_weight'] * total_variation(pred_phs)
 
             # Zero current grads and do backprop
             self.optimizer.zero_grad()

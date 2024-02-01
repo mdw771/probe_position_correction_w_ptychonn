@@ -133,6 +133,8 @@ class TrainingConfigDict(ConfigDict):
         # (3) tuple(nn.Module, kwargs): the first element of the tuple is the class handle of a model class, and the
         #     second is a dictionary of keyword arguments. The model will be instantiated using these.
         self['model'] = None
+        self['l1_weight'] = 0
+        self['tv_weight'] = 0
 
 
 class PtychoNNTrainingConfigDict(TrainingConfigDict):
