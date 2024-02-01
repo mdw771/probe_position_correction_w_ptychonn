@@ -27,7 +27,7 @@ class ReconDataNotFoundError(Exception):
 class DatasetGenerator:
 
     def __init__(self, data_path, label_path, output_path='./data_train.h5', target_shape=(128, 128),
-                 target_psize_nm=20, standardize_data=True, standardize_labels=True,
+                 target_dp_psize_nm=20, target_label_psize_nm=8, standardize_data=True, standardize_labels=True,
                  data_dtype='float32', label_dtype='float32', transform_func=None, transform_func_kwargs=None,
                  mode='train',
                  *args, **kwargs):
@@ -35,7 +35,8 @@ class DatasetGenerator:
         self.label_path = label_path
         self.output_path = output_path
         self.target_shape = target_shape
-        self.target_psize_nm = target_psize_nm
+        self.target_dp_psize_nm = target_dp_psize_nm
+        self.target_label_psize_nm = target_label_psize_nm
         self.data_shape = [0, *self.target_shape]
         self.data_dtype = data_dtype
         self.label_dtype = label_dtype
@@ -60,7 +61,7 @@ class DatasetGenerator:
         dset = grp.create_dataset('reciprocal', shape=tuple(self.data_shape), maxshape=tuple(self.data_shape),
                                   dtype=self.data_dtype)
         grp = self.f_out.create_group('metadata')
-        dset = grp.create_dataset('psize_nm', data=np.array([self.target_psize_nm]))
+        dset = grp.create_dataset('psize_nm', data=np.array([self.target_dp_psize_nm]))
 
     def get_data_storage_space(self):
         """
@@ -102,7 +103,7 @@ class DatasetGenerator:
         return arr
 
     def write_metadata(self):
-        self.f_out['metadata/psize_nm'][0] = self.target_psize_nm
+        self.f_out['metadata/psize_nm'][0] = self.target_dp_psize_nm
 
     def write_diffraction_data(self, data):
         self.f_out['data/reciprocal'][self.z_data:self.z_data + data.shape[0]] = data
@@ -132,7 +133,8 @@ class DatasetGenerator:
 class BNPDatasetGenerator(DatasetGenerator):
 
     def __init__(self, data_path, label_path, mda_path, output_path='./data_train.h5',
-                 target_shape=(256, 256), target_psize_nm=20, standardize_data=True, standardize_labels=True,
+                 target_shape=(256, 256), target_dp_psize_nm=20, target_label_psize_nm=8,
+                 standardize_data=True, standardize_labels=True,
                  transform_func=None, transform_func_kwargs=None, mode='train',
                  *args, **kwargs):
         """
@@ -142,7 +144,7 @@ class BNPDatasetGenerator(DatasetGenerator):
         :param label_path: str. Path to the folder that contains reconstructed object functions (phases).
         :param transform_func: Callable. A function that transform a 3D array into the desired shape.
         """
-        super().__init__(data_path, label_path, output_path, target_shape, target_psize_nm,
+        super().__init__(data_path, label_path, output_path, target_shape, target_dp_psize_nm, target_label_psize_nm,
                          standardize_data=standardize_data, standardize_labels=standardize_labels,
                          transform_func=transform_func,
                          transform_func_kwargs=transform_func_kwargs,
@@ -218,12 +220,12 @@ class BNPDatasetGenerator(DatasetGenerator):
 class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
 
     def __init__(self, data_path, label_path, output_path='./data_train.h5',
-                 target_shape=(256, 256), target_psize_nm=20, standardize_data=True,
+                 target_shape=(256, 256), target_dp_psize_nm=20, target_label_psize_nm=8, standardize_data=True,
                  subtract_data_mean=False, standardize_labels_across_samples=True,
                  transform_func=None, transform_func_kwargs=None, mode='train',
                  transform_positions_to_snake_path=True,
                  allow_using_reconstructions_with_different_psize=False,
-                 subselect=None,
+                 dp_subselect_for_each_fly=None, scan_id_included=None,
                  *args, **kwargs):
         """
         Generate data from the HDF5 files used by PtychoShelves.
@@ -235,7 +237,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         :param transform_func: Callable.
         :param transform_func_kwargs: dict.
         """
-        super().__init__(data_path, label_path, output_path, target_shape, target_psize_nm,
+        super().__init__(data_path, label_path, output_path, target_shape, target_dp_psize_nm, target_label_psize_nm,
                          standardize_data=standardize_data,
                          standardize_labels=standardize_labels_across_samples,
                          transform_func=transform_func,
@@ -246,10 +248,11 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         self.transform_positions_to_snake_path = transform_positions_to_snake_path
         self.subtract_data_mean = subtract_data_mean
         self.allow_using_reconstructions_with_different_psize = allow_using_reconstructions_with_different_psize
-        if subselect is None:
-            self.subselect = slice(None)
+        if dp_subselect_for_each_fly is None:
+            self.dp_subselect = slice(None)
         else:
-            self.subselect = slice(subselect[0], subselect[1])
+            self.dp_subselect = slice(dp_subselect_for_each_fly[0], dp_subselect_for_each_fly[1])
+        self.scan_id_included = scan_id_included
         assert self.data_path == self.label_path, 'data_path and label_path for PtychoShelves data should be the same.'
 
     def build_scan_indices(self):
@@ -267,6 +270,8 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
             if len(glob.glob(os.path.join(self.label_path, 'fly{:03}'.format(ind), 'roi0_Ndp*'))) > 0:
                 filtered_indices.append(ind)
         self.scan_indices = filtered_indices
+        if self.scan_id_included:
+            self.scan_indices = list(set(self.scan_indices) & set(self.scan_id_included))
 
     def build_data_shape(self):
         self.data_shape = np.array([0, *self.target_shape]).astype(int)
@@ -323,8 +328,8 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         f_param, s = self.choose_h5_file(scan_folder, type='para', return_size=True)
         f_param = h5py.File(f_param, 'r')
         psize_m = f_param['dx'][0]
-        pos_x_m = f_param['ppX'][...][self.subselect]
-        pos_y_m = f_param['ppY'][...][self.subselect]
+        pos_x_m = f_param['ppX'][...][self.dp_subselect]
+        pos_y_m = f_param['ppY'][...][self.dp_subselect]
         nx = f_param['N_scan_x'][0]
         ny = f_param['N_scan_y'][0]
         params = {}
@@ -366,14 +371,14 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         f_dp = self.choose_h5_file(scan_folder, type='dp')
         f_dp = h5py.File(f_dp, 'r')
         logger.info('Loading diffraction data...')
-        dat = f_dp['dp'][...][self.subselect]
+        dat = f_dp['dp'][...][self.dp_subselect]
         psize_nm = params['nominal_psize_nm']
         logger.info('Transforming diffraction data...')
         if not np.allclose(dat.shape[1:], self.target_shape):
             orig_shape = dat.shape[1:]
             dat = self.crop_data_to_target_shape(dat, self.target_shape)
             psize_nm = psize_nm / np.mean(self.target_shape / np.array(orig_shape))
-        dat = self.rescale_diffraction_data_to_match_pixel_size(dat, psize_nm, self.target_psize_nm)
+        dat = self.rescale_diffraction_data_to_match_pixel_size(dat, psize_nm, self.target_dp_psize_nm)
         if self.transform_positions_to_snake_path:
             dat = np.take(dat, params['reordering_indices'], axis=0)
         dat = dat[params['indices_to_keep']]
@@ -409,7 +414,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
             probe_imag = ndi.zoom(probe.imag, [1, target_shape[0] / orig_shape[0], target_shape[1] / orig_shape[1]])
             probe = probe_real + 1j * probe_imag
             psize_nm = psize_nm / np.mean(self.target_shape / np.array(orig_shape))
-        probe = self.rescale_diffraction_data_to_match_pixel_size(probe, psize_nm, self.target_psize_nm)
+        probe = self.rescale_diffraction_data_to_match_pixel_size(probe, psize_nm, self.target_dp_psize_nm)
         probe = np.reshape(probe, [*orig_arr_shape[:2], *self.target_shape])
         probe = np.transpose(probe, [2, 3, 0, 1])
         if self.debug:
@@ -515,7 +520,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
 
     def extract_object_tiles(self, obj, pos, params):
         orig_psize_nm = params['psize_nm']
-        new_psize_nm = self.target_psize_nm
+        new_psize_nm = self.target_label_psize_nm
         radius = np.array(self.target_shape) / 2
         radius = radius * new_psize_nm / orig_psize_nm
         query_pts = []
@@ -568,7 +573,6 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         self.finish_output_file()
 
     def run_generate_training_data(self):
-        # self.scan_indices = [74, 75, 88, 89, 97]
         for i_scan, scan_idx in enumerate(self.scan_indices):
             try:
                 logger.info('({}/{}) Scan index = {}'.format(i_scan + 1, len(self.scan_indices), scan_idx))
@@ -619,10 +623,11 @@ if __name__ == '__main__':
     target_shape = (128, 128)
     # gen = FromPtychoShelvesDatasetGenerator(data_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/results/ML_recon',
     #                                         label_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/results/ML_recon',
-    #                                         output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_train_std_meanSub_data_std_labels_dense.h5',
+    #                                         output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_train_std_meanSub_data_std_labels_denseRegions_labelPsize_4.h5',
     #                                         # output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/test.h5',
     #                                         target_shape=target_shape,
-    #                                         target_psize_nm=20,
+    #                                         target_dp_psize_nm=20,
+    #                                         target_label_psize_nm=4,
     #                                         transform_func=transform,
     #                                         transform_func_kwargs={'target_shape': target_shape},
     #                                         standardize_data=True,
@@ -630,13 +635,15 @@ if __name__ == '__main__':
     #                                         subtract_data_mean=True,
     #                                         standardize_labels_across_samples=True,
     #                                         allow_using_reconstructions_with_different_psize=True,
-    #                                         transform_positions_to_snake_path=False)
+    #                                         transform_positions_to_snake_path=False,
+    #                                         scan_id_included=[74, 75, 88, 89, 97])
     gen = FromPtychoShelvesDatasetGenerator(data_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/results/ML_recon',
                                             label_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/results/ML_recon',
                                             output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/data_085.h5',
                                             # output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_77.h5',
                                             target_shape=target_shape,
                                             target_psize_nm=20,
+                                            target_label_psize_nm=4,
                                             transform_func=transform,
                                             transform_func_kwargs={'target_shape': target_shape},
                                             standardize_data=True,
@@ -645,7 +652,8 @@ if __name__ == '__main__':
                                             standardize_labels_across_samples=True,
                                             mode='test',
                                             transform_positions_to_snake_path=True,
-                                            subselect=(16774, 23853))
+                                            dp_subselect_for_each_fly=(16774, 23853),
+                                            scan_id_included=[85])
     gen.debug = True
     gen.build()
     gen.run()
