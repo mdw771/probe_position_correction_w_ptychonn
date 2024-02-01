@@ -251,13 +251,19 @@ class PtychoNNTrainer:
         else:
             self.loss_criterion = self.config_dict['loss_function']()
 
-    def build_model(self):
+    def get_model(self):
         if self.config_dict['model'] is None:
-            self.model = PtychoNNModel()
+            model = PtychoNNModel()
         elif isinstance(self.config_dict['model'], nn.Module):
-            self.model = self.config_dict['model']
+            model = self.config_dict['model']
         elif isinstance(self.config_dict['model'], (tuple, list)):
-            self.model = self.config_dict['model'][0](**self.config_dict['model'][1])
+            model = self.config_dict['model'][0](**self.config_dict['model'][1])
+        else:
+            raise ValueError('Invalid model given in config.')
+        return model
+
+    def build_model(self):
+        self.model = self.get_model()
 
         try:
             torchinfo.summary(self.model, self.dataset.__getitem__(0)[0].shape, device='cpu')
@@ -356,17 +362,26 @@ class PtychoNNTrainer:
                 ax[i].set_title(name_list[i])
         plt.show()
 
-    def run_testing(self, ind_list, dataset='train', external_dataset=None):
-        self.model.eval()
+    def run_testing(self, ind_list, dataset='train', external_dataset=None, model_choice='final'):
+        if model_choice == 'final':
+            model = self.model
+        elif model_choice == 'best':
+            model = self.get_model()
+            model.load_state_dict(torch.load(os.path.join(self.config_dict['model_save_dir'], 'best_model.pth')))
+        else:
+            raise ValueError('Invalid model_choice.')
+        model.eval()
         if dataset == 'train':
             dset = self.training_dataset
         elif dataset == 'validation':
             dset = self.validation_dataset
         elif dataset == 'external':
             dset = external_dataset
+        else:
+            raise ValueError('Invalid dataset.')
         dp_list, true_amp, true_ph = dset.__getitems__(ind_list)
         dp_list.to(self.device)
-        pred_amp, pred_ph = self.model(dp_list)
+        pred_amp, pred_ph = model(dp_list)
         pred_amp, pred_ph = self.post_process(pred_amp, pred_ph, for_plotting=True)
         self.plot_test_results(dp_list, pred_amp, pred_ph, true_amp, true_ph)
 
