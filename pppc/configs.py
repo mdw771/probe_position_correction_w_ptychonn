@@ -114,6 +114,7 @@ class InferenceConfigDict(ConfigDict):
         self['offset_estimator_beta'] = 0.5
         self['smooth_constraint_weight'] = 1e-2
         self['use_baseline_offsets_for_uncertain_pairs'] = False
+        self['stitching_downsampling'] = 1
         self['random_seed'] = 123
         self['debug'] = None
 

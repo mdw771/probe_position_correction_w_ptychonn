@@ -199,7 +199,7 @@ class DatasetInferencer:
         images = read_all_images(self.config_dict['prediction_output_path'], prefix + '_')
         tifffile.imwrite(os.path.join(self.config_dict['prediction_output_path'], '{}.tiff'.format(prefix)), images)
         if delete_individual_files_after_complete:
-            flist_del = glob.glob(os.path.join(self.config_dict['prediction_output_path'], prefix + '_'))
+            flist_del = glob.glob(os.path.join(self.config_dict['prediction_output_path'], prefix + '_*'))
             for f in flist_del:
                 os.remove(f)
 
@@ -214,6 +214,7 @@ class TileStitcher:
         self.flip_lr = False
         self.flip_final_image = True
         self.name_prefix = 'pred_phase_'
+        self.downsampling = self.config_dict['stitching_downsampling']
 
     def build(self):
         self.build_position_list()
@@ -241,6 +242,7 @@ class TileStitcher:
             self.images = read_all_images(self.config_dict['prediction_output_path'], self.name_prefix)
         if self.config_dict['central_crop'] is not None:
             self.images = crop_center(self.images, self.config_dict['central_crop'])
+        self.images = self.images[:, ::self.downsampling, ::self.downsampling]
 
     def run(self):
         """
@@ -249,6 +251,7 @@ class TileStitcher:
         pos = self.position_list.array
         data = self.images
         psize_m = self.position_list.psize_nm * 1e-9 if self.position_list.original_unit != 'pixel' else 1.0
+        psize_m = psize_m * self.downsampling
         pos_x = pos[:, 1]
         pos_y = pos[:, 0]
         margin_m = [(self.images[0].shape[i] // 2 + 10) * psize_m for i in range(2)]
