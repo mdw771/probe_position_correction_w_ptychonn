@@ -113,6 +113,7 @@ class PtychoNNTrainer:
                     self.current_epoch, self.metric_dict['losses'][-1][2], self.metric_dict['val_losses'][-1][2]))
                 logger.info('Epoch: %d | Ending LR: %.6f ' % (self.current_epoch, self.metric_dict['lrs'][-1][0]))
         self.update_saved_model(filename='final_model.pth')
+        self.write_training_info()
 
     def run_trainig_epoch(self):
         tot_loss = 0.0
@@ -305,10 +306,15 @@ class PtychoNNTrainer:
         torch.save(self.model.module.state_dict(), dest_path)
         self.config_dict.dump_to_json(os.path.join(path, 'configs.json'))
 
+    def write_training_info(self):
+        f = open(os.path.join(self.config_dict['model_save_dir'], 'training_info.txt'), 'w')
+        for key in self.metric_dict:
+            f.write('{} = {}\n'.format(key, self.metric_dict[key]))
+
     def plot_training_history(self):
         self.plot_lr_history()
         self.plot_loss_history()
-        plt.show()
+        plt.savefig(os.path.join(self.config_dict['model_save_dir'], 'loss_history.png'))
 
     def plot_lr_history(self):
         batches = np.linspace(0, len(self.metric_dict['lrs']), len(self.metric_dict['lrs']) + 1)
@@ -326,18 +332,18 @@ class PtychoNNTrainer:
             return
         val_losses_arr = np.array(self.metric_dict['val_losses'])
         fig, ax = plt.subplots(3, sharex=True, figsize=(15, 8))
-        ax[0].plot(losses_arr[:, 0], 'C3o-', label="Total Train loss")
-        ax[0].plot(val_losses_arr[:, 0], 'C0o-', label="Total Val loss")
+        ax[0].plot(losses_arr[:, 0], 'C3o-', label="Total Train loss", markersize=1)
+        ax[0].plot(val_losses_arr[:, 0], 'C0o-', label="Total Val loss", markersize=1)
         ax[0].set(ylabel='Loss')
         ax[0].grid()
         ax[0].legend(loc='center right', bbox_to_anchor=(1.5, 0.5))
-        ax[1].plot(losses_arr[:, 1], 'C3o-', label="Train Amp loss")
-        ax[1].plot(val_losses_arr[:, 1], 'C0o-', label="Val Amp loss")
+        ax[1].plot(losses_arr[:, 1], 'C3o-', label="Train Amp loss", markersize=1)
+        ax[1].plot(val_losses_arr[:, 1], 'C0o-', label="Val Amp loss", markersize=1)
         ax[1].set(ylabel='Loss')
         ax[1].grid()
         ax[1].legend(loc='center right', bbox_to_anchor=(1.5, 0.5))
-        ax[2].plot(losses_arr[:, 2], 'C3o-', label="Train Ph loss")
-        ax[2].plot(val_losses_arr[:, 2], 'C0o-', label="Val Ph loss")
+        ax[2].plot(losses_arr[:, 2], 'C3o-', label="Train Ph loss", markersize=1)
+        ax[2].plot(val_losses_arr[:, 2], 'C0o-', label="Val Ph loss", markersize=1)
         ax[2].set(ylabel='Loss')
         ax[2].grid()
         ax[2].legend(loc='center right', bbox_to_anchor=(1.5, 0.5))
