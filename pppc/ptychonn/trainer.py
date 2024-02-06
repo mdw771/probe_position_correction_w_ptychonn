@@ -132,6 +132,8 @@ class PtychoNNTrainer:
             if self.debug and self.current_iteration % 100 == 0:
                 self.plot_images([ft_images[0, 0], amps[0, 0], phs[0, 0], pred_amps[0, 0], pred_phs[0, 0]],
                                  name_list=['DP data', 'True amp', 'True phase', 'Pred amp', 'Pred phase'])
+                self.plot_images([ft_images[-1, 0], amps[-1, 0], phs[-1, 0], pred_amps[-1, 0], pred_phs[-1, 0]],
+                                 name_list=['DP data', 'True amp', 'True phase', 'Pred amp', 'Pred phase'])
 
             # Compute losses
             # Monitor amplitude loss
@@ -207,6 +209,7 @@ class PtychoNNTrainer:
             self.metric_dict['best_val_loss_ph'] = val_loss_ph / n_batches
             self.metric_dict['epoch_best_val_loss'] = self.current_epoch
             self.update_saved_model(filename='best_model.pth')
+            self.write_training_info()
 
     def initialize_metric_dict(self):
         self.metric_dict['losses'] = []
