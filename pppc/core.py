@@ -120,6 +120,7 @@ class PtychoNNProbePositionCorrector:
         self.a_mat = np.array([])
         self.b_vec = np.array([])
         self.count_bad_offset = 0
+        self.row_index_list = []
 
     def build(self):
         if self.config_dict['random_seed'] is not None:
@@ -145,15 +146,34 @@ class PtychoNNProbePositionCorrector:
         self.registrator = Registrator(method=self.config_dict['registration_method'],
                                        max_shift=self.config_dict['max_shift'],
                                        random_seed=self.config_dict['random_seed'],
+                                       subpixel=self.config_dict['do_subpixel'],
                                        outlier_removal_method=self.config_dict['sift_outlier_removal_method'],
                                        boundary_exclusion_length=self.config_dict['sift_border_exclusion_length'],
                                        downsample=self.config_dict['registration_downsample'],
                                        algs=self.config_dict['hybrid_registration_algs'],
                                        tols=self.config_dict['hybrid_registration_tols'],
+                                       tol=self.config_dict['nonhybrid_registration_tol'],
                                        min_roi_stddev=self.config_dict['min_roi_stddev'],
                                        use_baseline_offsets_for_uncertain_pairs=self.config_dict[
                                            'use_baseline_offsets_for_uncertain_pairs'
                                        ])
+
+        if self.config_dict['rectangular_grid'] and self.config_dict['use_baseline_offsets_for_points_on_same_row']:
+            self.build_row_index_list()
+
+    def build_row_index_list(self):
+        assert self.orig_probe_positions, 'build_row_index_list requires an input position list, but nothing is given.'
+        pos = self.orig_probe_positions.array
+        jump_inds = np.where(np.abs(pos[1:, 0] - pos[:-1, 0]) > 1e-5)[0] - 1
+        jump_inds = np.concatenate([jump_inds, [pos.shape[0]]])
+        row_inds = []
+        for row, jump_ind in enumerate(jump_inds):
+            if row == 0:
+                row_inds = row_inds + [row] * jump_ind
+            else:
+                row_inds = row_inds + [row] * (jump_ind - jump_inds[row - 1])
+        assert len(row_inds) == pos.shape[0]
+        self.row_index_list = np.array(row_inds)
 
     def run(self):
         if self.method == 'serial':
@@ -172,15 +192,15 @@ class PtychoNNProbePositionCorrector:
             if dp is None:
                 dp = self.dp_data_fhdl.get_dp_by_consecutive_index(ind)
             obj_amp, obj_ph = self.ptycho_reconstructor.batch_infer(dp[np.newaxis, :, :])
-        if self.debug:
-            fig, ax = plt.subplots(1, 3)
-            ax[0].imshow(dp)
-            ax[0].set_title('DP')
-            ax[1].imshow(obj_ph[0])
-            ax[1].set_title('Recon phase')
-            ax[2].imshow(obj_amp[0])
-            ax[2].set_title('Recon mag')
-            plt.show()
+        # if self.debug:
+        #     fig, ax = plt.subplots(1, 3)
+        #     ax[0].imshow(dp)
+        #     ax[0].set_title('DP')
+        #     ax[1].imshow(obj_ph[0])
+        #     ax[1].set_title('Recon phase')
+        #     ax[2].imshow(obj_amp[0])
+        #     ax[2].set_title('Recon mag')
+        #     plt.show()
         obj_amp, obj_ph = self.crop_center([obj_amp, obj_ph])
         return obj_amp, obj_ph
 
@@ -272,15 +292,26 @@ class PtychoNNProbePositionCorrector:
                 registered_pair_hash_table['{}_{}'.format(ind_neighbor, i_dp)] = 1
                 neighbor_obj = self.reconstruct_dp(dp=self.dp_data_fhdl.get_dp_by_raw_index(ind_neighbor),
                                                    ind=ind_neighbor)[1][0]
-                offset = self.registrator.run(neighbor_obj, current_obj)
-                if self.debug:
-                    fig, ax = plt.subplots(1, 2)
-                    ax[0].imshow(neighbor_obj)
-                    ax[1].imshow(current_obj)
-                    plt.suptitle('Index {} - {}'.format(i_dp, ind_neighbor))
-                    plt.show()
-                    plt.tight_layout()
-                    print('Offset: {}'.format(offset))
+
+                if self.config_dict['use_baseline_offsets_for_points_on_same_row'] \
+                        and self.row_index_list is not None \
+                        and self.row_index_list[i_dp] == self.row_index_list[ind_neighbor]:
+                    logger.info('DP {} and {} are on the same row, so using baseline offset for this pair.'.format(
+                        i_dp, ind_neighbor))
+                    offset = self.orig_probe_positions.array[i_dp] - self.orig_probe_positions.array[ind_neighbor]
+                    self.registrator.algorithm.status = self.registrator.get_status_code('ok')
+                else:
+                    offset = self.registrator.run(neighbor_obj, current_obj)
+                    if self.debug and self.registrator.get_status() != self.registrator.get_status_code('empty'):
+                        fig, ax = plt.subplots(1, 2)
+                        im = ax[0].imshow(neighbor_obj, vmin=-0.5, vmax=-0.2)
+                        plt.colorbar(im)
+                        im = ax[1].imshow(current_obj, vmin=-0.5, vmax=-0.2)
+                        plt.colorbar(im)
+                        plt.suptitle('Index {} - {}'.format(i_dp, ind_neighbor))
+                        plt.show()
+                        plt.tight_layout()
+                        print('Offset: {}'.format(offset))
                 if self.config_dict['use_baseline_offsets_for_uncertain_pairs'] and \
                         self.registrator.get_status() == self.registrator.get_status_code('empty'):
                     offset = self.orig_probe_positions.array[i_dp] - self.orig_probe_positions.array[ind_neighbor]

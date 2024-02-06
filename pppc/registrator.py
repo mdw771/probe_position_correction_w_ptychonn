@@ -24,11 +24,15 @@ class Registrator:
                                'phase_correlation': PhaseCorrelationRegistrationAlgorithm,
                                'sift': SIFTRegistrationAlgorithm,
                                'hybrid': HybridRegistrationAlgorithm}
-        self.algorithm = self.algorithm_dict[method](max_shift=self.max_shift, **kwargs)
+        if 'tol' in self.kwargs.keys() and self.kwargs['tol'] is None:
+            del self.kwargs['tol']
+        self.algorithm = self.algorithm_dict[method](max_shift=self.max_shift, **self.kwargs)
         self.algorithm.random_seed = self.random_seed
 
-    def has_registratable_features(self, img, threshold=0.003):
-        if np.std(img) < threshold:
+    def has_registratable_features(self, img, std_threshold=0.003, abs_threshold=None):
+        if np.std(img) < std_threshold:
+            return False
+        if abs_threshold and np.abs(img).max() < abs_threshold:
             return False
         return True
 
@@ -43,7 +47,9 @@ class Registrator:
         """
         if 'use_baseline_offsets_for_uncertain_pairs' in self.kwargs.keys() and \
                 self.kwargs['use_baseline_offsets_for_uncertain_pairs']:
-            if (not self.has_registratable_features(previous)) or (not self.has_registratable_features(current)):
+            if ((not self.has_registratable_features(previous, std_threshold=0.003, abs_threshold=0.2)) or
+                    (not self.has_registratable_features(current, std_threshold=0.003, abs_threshold=0.2))):
+                logger.info('One or both images appear to be empty. Using baseline offset for this pair.')
                 self.algorithm.status = self.algorithm.status_dict['empty']
                 return np.array([0, 0])
         offset = self.algorithm.run(previous, current)
@@ -78,13 +84,17 @@ class RegistrationAlgorithm:
             logger.info('Large error after applying offset ({}).'.format(error))
             self.status = self.status_dict['bad']
             # fig, ax = plt.subplots(1, 5, figsize=(13, 3))
-            # ax[0].imshow(prev); ax[0].grid('both')
-            # ax[1].imshow(curr); ax[1].grid('both')
-            # ax[2].imshow(prev_shifted); ax[2].grid('both')
-            # ax[3].imshow(prev_shifted - curr); ax[3].grid('both')
+            # ax[0].imshow(prev);
+            # ax[0].grid('both')
+            # ax[1].imshow(curr);
+            # ax[1].grid('both')
+            # ax[2].imshow(prev_shifted);
+            # ax[2].grid('both')
+            # ax[3].imshow(prev_shifted - curr);
+            # ax[3].grid('both')
             # if isinstance(self, ErrorMapRegistrationAlgorithm):
             #     ax[4].imshow(self.error_map)
-            # plt.suptitle('{} {}'.format(str(self), offset))
+            # plt.suptitle('{} {} {}'.format(str(self), offset, error))
             # plt.tight_layout()
             # plt.show()
         else:
@@ -122,6 +132,7 @@ class HybridRegistrationAlgorithm(RegistrationAlgorithm):
         super().__init__(*args, **kwargs)
         self.alg_list = []
         self.alg_names = algs
+        self.subpixel = kwargs['subpixel']
         for i, alg in enumerate(algs):
             if alg == 'error_map_multilevel':
                 self.alg_list.append(
@@ -129,7 +140,7 @@ class HybridRegistrationAlgorithm(RegistrationAlgorithm):
                                                   min_roi_stddev=min_roi_stddev))
             elif alg == 'error_map_expandable':
                 self.alg_list.append(
-                    ErrorMapRegistrationAlgorithm(subpixel=True, max_shift=max_shift, n_levels=1, tol=tols[i],
+                    ErrorMapRegistrationAlgorithm(subpixel=self.subpixel, max_shift=max_shift, n_levels=1, tol=tols[i],
                                                   min_roi_stddev=min_roi_stddev))
             elif alg == 'sift':
                 self.alg_list.append(
