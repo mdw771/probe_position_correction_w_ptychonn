@@ -253,7 +253,7 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         else:
             self.dp_subselect = slice(dp_subselect_for_each_fly[0], dp_subselect_for_each_fly[1])
         self.scan_id_included = scan_id_included
-        assert self.data_path == self.label_path, 'data_path and label_path for PtychoShelves data should be the same.'
+        # assert self.data_path == self.label_path, 'data_path and label_path for PtychoShelves data should be the same.'
 
     def build_scan_indices(self):
         data_indices = []
@@ -312,16 +312,38 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
         pos_grad = np.abs(pos_grad)
         new_line_ind = np.where(pos_grad > 0.5)[0] + 1
         new_line_ind = np.concatenate([[0], new_line_ind, [len(pos)]])
-        row = 0
-        while True:
-            if row % 2 == 0:
-                inds += list(range(new_line_ind[row], new_line_ind[row + 1]))
-            else:
-                inds += list(range(new_line_ind[row + 1] - 1, new_line_ind[row] - 1, -1))
-            if row == len(new_line_ind) - 2:
-                break
-            row += 1
-        return inds
+        if len(new_line_ind) < len(pos) // 2:
+            row = 0
+            while True:
+                if row % 2 == 0:
+                    inds += list(range(new_line_ind[row], new_line_ind[row + 1]))
+                else:
+                    inds += list(range(new_line_ind[row + 1] - 1, new_line_ind[row] - 1, -1))
+                if row == len(new_line_ind) - 2:
+                    break
+                row += 1
+            return inds
+        else:
+            logger.info('The given position is probably not a rectangular grid. I can do snake pattern transform '
+                        'using a set number of colums. How many columns are there in the grid? ')
+            nx = int(input())
+            logger.info('Reverse path for every how many scan lines?')
+            n_reverse_every = int(input())
+            row = 0
+            i = 0
+            while True:
+                if row % 2 == 0:
+                    inds += list(range(i, i + n_reverse_every * nx))
+                    i += n_reverse_every * nx
+                else:
+                    for j in range(n_reverse_every):
+                        inds += list(range(i, i + nx))[::-1]
+                        i += nx
+                if i >= len(pos):
+                    break
+                row += 1
+            return inds
+
 
     def get_parameters(self, scan_idx):
         scan_folder = os.path.join(self.data_path, 'fly{:03}'.format(scan_idx))
@@ -612,6 +634,278 @@ class FromPtychoShelvesDatasetGenerator(DatasetGenerator):
             except:
                 print('Could not generate ground truths for test data.')
 
+
+class FromAdorymDatasetGenerator(FromPtychoShelvesDatasetGenerator):
+    def __init__(self, data_path, label_path, output_path='./data_train.h5', probe_path='.',
+                 target_shape=(256, 256), original_label_psize_nm=8, original_probe_psize_nm=13.8,
+                 target_dp_psize_nm=6, target_label_psize_nm=6, standardize_data=True,
+                 subtract_data_mean=False, standardize_labels_across_samples=True,
+                 transform_func=None, transform_func_kwargs=None, mode='train',
+                 transform_positions_to_snake_path=True,
+                 allow_using_reconstructions_with_different_psize=False,
+                 pos_range_x=None, pos_range_y=None, dp_indices_included=None,
+                 augmentation=False,
+                 *args, **kwargs):
+        super().__init__(data_path, label_path, output_path=output_path,
+            target_shape=target_shape, target_dp_psize_nm=target_dp_psize_nm,
+            target_label_psize_nm=target_label_psize_nm, standardize_data=standardize_data,
+            subtract_data_mean=subtract_data_mean,
+            standardize_labels_across_samples=standardize_labels_across_samples,
+            transform_func=transform_func, transform_func_kwargs=transform_func_kwargs, mode=mode,
+            transform_positions_to_snake_path=transform_positions_to_snake_path,
+            allow_using_reconstructions_with_different_psize=allow_using_reconstructions_with_different_psize,
+            dp_subselect_for_each_fly=None, scan_id_included=None,
+            *args, **kwargs)
+
+        self.f_data = h5py.File(data_path, 'r')
+        self.pos_range_x = pos_range_x
+        self.pos_range_y = pos_range_y
+        self.dp_indices_included = dp_indices_included
+        self.probe_path = probe_path
+        self.probe = None
+        self.original_label_psize_nm = original_label_psize_nm
+        self.original_probe_psize_nm = original_probe_psize_nm
+        self.augmentation = augmentation
+
+    def build_scan_indices(self):
+        self.scan_indices = []
+
+    def build_data_shape(self):
+        self.data_shape = [self.f_data['exchange/data'].shape[1], *self.target_shape]
+
+    def build_probe(self):
+        probe_mag = tifffile.imread(os.path.join(self.probe_path, 'probe_mag_ds_1.tiff'))
+        probe_phase = tifffile.imread(os.path.join(self.probe_path, 'probe_phase_ds_1.tiff'))
+        probe = probe_mag * np.exp(1j * probe_phase)
+        probe = self.crop_data_to_target_shape(probe, self.target_shape)
+        probe = self.rescale_diffraction_data_to_match_pixel_size(probe, self.target_dp_psize_nm, self.original_probe_psize_nm)
+        self.probe = probe
+        if self.debug:
+            tifffile.imwrite(os.path.join(self.debug_dir, 'probe_mag.tiff'), np.abs(self.probe))
+            tifffile.imwrite(os.path.join(self.debug_dir, 'probe_phase.tiff'), np.angle(self.probe))
+
+    def forward(self, probe, obj):
+        """
+        Run forward simulation.
+
+        :param probe: [n_modes, h, w].
+        :param obj: [n_tiles, h, w].
+        :return: [n_tiles, h ,w].
+        """
+        intensity_list = []
+        n_modes = probe.shape[0]
+        for i_mode in range(n_modes):
+            i = np.fft.fftshift(np.fft.fft2(obj * probe[i_mode]))
+            intensity_list.append(np.abs(i) ** 2)
+        intensity = np.zeros_like(intensity_list[0])
+        for i in intensity_list:
+            intensity = intensity + i
+        return intensity
+
+    def get_parameters(self):
+        psize_m = self.f_data['metadata/psize_cm'][...] * 1e-2
+        pos_px = self.f_data['metadata/probe_pos_corrected_px'][...]
+        pos_m = pos_px * psize_m
+        params = {}
+        params['nominal_psize_nm'] = psize_m * 1e9
+        params['psize_nm'] = params['nominal_psize_nm']
+        params['pos_m'] = pos_m
+        params['pos_px'] = pos_px
+        params['reordering_indices'] = list(range(len(pos_m)))
+        if self.transform_positions_to_snake_path:
+            params['reordering_indices'] = self.get_snake_pattern_reordering_indices(params['pos_px'])
+            params['pos_m'] = np.take(params['pos_m'], params['reordering_indices'], axis=0)
+            params['pos_px'] = np.take(params['pos_px'], params['reordering_indices'], axis=0)
+        params['nominal_probe_size'] = self.f_data['exchange/data'].shape[-1]
+        params['probe_size'] = self.f_data['exchange/data'].shape[-1]
+        params['indices_to_keep'] = list(range(len(pos_m)))
+        return params
+
+    def process_positions(self, params, filter_positions=True):
+        pos = params['pos_px']
+        # Move positions to beam center
+        pos = pos + params['nominal_probe_size'] / 2
+        if filter_positions:
+            # Only keep positions that have enough overlap.
+            mask = np.ones(pos.shape[0]).astype(bool)
+            if self.dp_indices_included is not None:
+                mask_temp = np.zeros_like(mask)
+                mask_temp[self.dp_indices_included] = True
+                mask = np.logical_and(mask, mask_temp)
+            if self.pos_range_x is not None or self.pos_range_y is not None:
+                mask_temp = ((pos[:, 0] >= self.pos_range_y[0]) * (pos[:, 0] <= self.pos_range_y[1]) *
+                             (pos[:, 1] >= self.pos_range_x[0]) * (pos[:, 1] <= self.pos_range_x[1]))
+                mask = mask * mask_temp
+            pos_indices_to_keep = np.where(mask)[0]
+            filtered_pos = pos[pos_indices_to_keep]
+        else:
+            filtered_pos = pos
+            pos_indices_to_keep = np.arange(len(filtered_pos)).astype(int)
+        params['pos_px'] = filtered_pos
+        params['indices_to_keep'] = pos_indices_to_keep
+        if self.debug:
+            save_positions_to_csv(pos, os.path.join(self.debug_dir, 'raw_pos.csv'))
+            save_positions_to_csv(filtered_pos, os.path.join(self.debug_dir, 'pos.csv'))
+        return params
+
+    def get_diffraction_data(self, params):
+        logger.info('Loading diffraction data...')
+        dat = self.f_data['exchange/data'][0, :, :, :]
+        psize_nm = params['nominal_psize_nm']
+        logger.info('Transforming diffraction data...')
+        if not np.allclose(dat.shape[1:], self.target_shape):
+            orig_shape = dat.shape[1:]
+            dat = self.crop_data_to_target_shape(dat, self.target_shape)
+            psize_nm = psize_nm / np.mean(self.target_shape / np.array(orig_shape))
+        dat = self.rescale_diffraction_data_to_match_pixel_size(dat, psize_nm, self.target_dp_psize_nm)
+        if self.transform_positions_to_snake_path:
+            dat = np.take(dat, params['reordering_indices'], axis=0)
+        dat = dat[params['indices_to_keep']]
+        if self.debug:
+            tifffile.imwrite(os.path.join(self.debug_dir, 'data_raw.tiff'), dat)
+        # dat = self.clean_data(dat)
+        # if self.debug:
+        #     tifffile.imwrite(os.path.join(self.debug_dir, 'data_cleaned.tiff'), dat)
+        if self.subtract_data_mean:
+            dat = dat - np.mean(dat, axis=0)
+        if self.standardize_data:
+            # dat = (dat - np.mean(dat, axis=(1, 2), keepdims=True)) / (np.std(dat, axis=(1, 2), keepdims=True) + 1e-3)
+            dat = (dat - np.mean(dat)) / np.std(dat)
+        # dat = self.clean_data_std(dat, sigma_multiple=20)
+        if self.debug:
+            tifffile.imwrite(os.path.join(self.debug_dir, 'data.tiff'), dat)
+        return dat
+
+    def get_object(self):
+        obj_mag = tifffile.imread(os.path.join(self.label_path, 'obj_mag_ds_1.tiff'))
+        obj_phase = tifffile.imread(os.path.join(self.label_path, 'obj_phase_ds_1.tiff'))
+        return obj_mag, obj_phase
+
+    def get_labels(self, params):
+        obj_mag, obj_phase = self.get_object()
+        pos = params['pos_px']
+        logger.info('Extracting object tiles...')
+        labels_ph = self.extract_object_tiles(obj_phase, pos, params)
+        if self.standardize_labels:
+            labels_ph = (labels_ph - np.mean(labels_ph)) / np.std(labels_ph) * 0.1
+        labels_mag = self.extract_object_tiles(obj_mag, pos, params)
+        if self.standardize_labels:
+            labels_mag = (labels_mag - np.mean(labels_mag)) / np.std(labels_mag)
+        if self.debug:
+            tifffile.imwrite(os.path.join(self.debug_dir, 'obj_ph.tiff'), obj_phase)
+            tifffile.imwrite(os.path.join(self.debug_dir, 'labels_ph.tiff'), labels_ph)
+            tifffile.imwrite(os.path.join(self.debug_dir, 'labels_mag.tiff'), labels_mag)
+        return labels_ph, labels_mag
+
+    def get_augmented_data_and_labels(self, data, labels_ph, labels_mag):
+        logger.info('Generating augmentation data...')
+        aug_labels_ph = labels_ph[:, :, ::-1]
+        aug_labels_mag = labels_mag[:, :, ::-1]
+        aug_labels = aug_labels_mag * np.exp(1j * aug_labels_ph)
+        data_aug = self.forward(self.probe, aug_labels)
+
+        if self.subtract_data_mean:
+            data_aug = data_aug - np.mean(data_aug, axis=0)
+        if self.standardize_data:
+            data_aug = (data_aug - np.mean(data_aug)) / np.std(data_aug)
+
+        data = np.concatenate([data, data_aug])
+        labels_ph = np.concatenate([labels_ph, aug_labels_ph])
+        labels_mag = np.concatenate([labels_mag, aug_labels_mag])
+        if self.debug:
+            tifffile.imwrite(os.path.join(self.debug_dir, 'data.tiff'), data)
+            tifffile.imwrite(os.path.join(self.debug_dir, 'labels_ph.tiff'), labels_ph)
+            tifffile.imwrite(os.path.join(self.debug_dir, 'labels_mag.tiff'), labels_mag)
+
+        return data, labels_ph, labels_mag
+
+    def run_generate_training_data(self):
+        params = self.get_parameters()
+        params = self.process_positions(params)
+        if len(params['indices_to_keep']) == 0:
+            logging.warning('No positions are left after filtering.')
+        data = self.get_diffraction_data(params)
+        labels_ph, labels_mag = self.get_labels(params)
+        if self.augmentation:
+            self.build_probe()
+            data, labels_ph, labels_mag = self.get_augmented_data_and_labels(data, labels_ph, labels_mag)
+        self.write_diffraction_data(data)
+        self.write_label(labels_ph, labels_mag)
+
+
+class FromPtychoNNHDF5DatasetGenerator(FromAdorymDatasetGenerator):
+
+    def __init__(self, data_path, label_path, probe_path, output_path='./data_train.h5',
+                 target_shape=(256, 256), original_label_psize_nm=8, original_probe_psize_nm=13.8,
+                 target_dp_psize_nm=6, target_label_psize_nm=6, standardize_data=True,
+                 subtract_data_mean=False, standardize_labels_across_samples=True,
+                 transform_func=None, transform_func_kwargs=None, mode='train',
+                 transform_positions_to_snake_path=True,
+                 allow_using_reconstructions_with_different_psize=False,
+                 pos_range_x=None, pos_range_y=None,
+                 *args, **kwargs):
+        super().__init__(data_path, label_path, output_path=output_path, probe_path=probe_path,
+            target_shape=target_shape,
+            original_label_psize_nm=original_label_psize_nm, original_probe_psize_nm=original_probe_psize_nm,
+            target_dp_psize_nm=target_dp_psize_nm,
+            target_label_psize_nm=target_label_psize_nm, standardize_data=standardize_data,
+            subtract_data_mean=subtract_data_mean,
+            standardize_labels_across_samples=standardize_labels_across_samples,
+            transform_func=transform_func, transform_func_kwargs=transform_func_kwargs, mode=mode,
+            transform_positions_to_snake_path=transform_positions_to_snake_path,
+            pos_range_x=pos_range_x, pos_range_y=pos_range_y,
+            allow_using_reconstructions_with_different_psize=allow_using_reconstructions_with_different_psize,
+            *args, **kwargs)
+
+    def build_data_shape(self):
+        self.data_shape = [self.f_data['data/reciprocal'].shape[0], *self.target_shape]
+
+    def get_diffraction_data(self, obj_mag, obj_phase):
+        obj = obj_mag * np.exp(1j * obj_phase)
+        dat = self.forward(self.probe, obj)
+        if self.subtract_data_mean:
+            dat = dat - np.mean(dat, axis=0)
+        if self.standardize_data:
+            # dat = (dat - np.mean(dat, axis=(1, 2), keepdims=True)) / (np.std(dat, axis=(1, 2), keepdims=True) + 1e-3)
+            dat = (dat - np.mean(dat)) / np.std(dat)
+        if self.debug:
+            tifffile.imwrite(os.path.join(self.debug_dir, 'data.tiff'), dat)
+        return dat
+
+    def get_labels(self):
+        labels = self.f_data['data/real']
+        labels_mag = np.abs(labels)
+        labels_phase = np.angle(labels)
+        if self.debug:
+            tifffile.imwrite(os.path.join(self.debug_dir, 'orig_labels_phase.tiff'), labels_phase)
+        labels_mag = self.rescale_diffraction_data_to_match_pixel_size(labels_mag, self.target_label_psize_nm,
+                                                                       self.original_label_psize_nm)
+        labels_phase = self.rescale_diffraction_data_to_match_pixel_size(labels_phase, self.target_label_psize_nm,
+                                                                       self.original_label_psize_nm)
+        if self.debug:
+            tifffile.imwrite(os.path.join(self.debug_dir, 'labels_mag.tiff'), labels_mag)
+            tifffile.imwrite(os.path.join(self.debug_dir, 'labels_ph.tiff'), labels_phase)
+        return labels_phase, labels_mag
+
+    def get_parameters(self):
+        psize_m = self.original_label_psize_nm
+        params = {}
+        params['nominal_psize_nm'] = psize_m * 1e9
+        params['psize_nm'] = params['nominal_psize_nm']
+        params['nominal_probe_size'] = self.probe.shape[0]
+        params['probe_size'] = self.probe.shape[0]
+        return params
+
+    def run_generate_training_data(self):
+        self.build_probe()
+        labels_ph, labels_mag = self.get_labels()
+        data = self.get_diffraction_data(labels_mag, labels_ph)
+        self.write_diffraction_data(data)
+        self.write_label(labels_ph, labels_mag)
+
+
+
+
 if __name__ == '__main__':
     def transform(img, target_shape=(128, 128), center=(268, 503)):
         half_target_shape = [target_shape[i] // 2 for i in range(2)]
@@ -637,23 +931,74 @@ if __name__ == '__main__':
     #                                         allow_using_reconstructions_with_different_psize=True,
     #                                         transform_positions_to_snake_path=False,
     #                                         scan_id_included=[74, 75, 88, 89, 97])
-    gen = FromPtychoShelvesDatasetGenerator(data_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/results/ML_recon',
-                                            label_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/results/ML_recon',
-                                            output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/data_085.h5',
-                                            # output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_77.h5',
-                                            target_shape=target_shape,
-                                            target_psize_nm=20,
-                                            target_label_psize_nm=4,
-                                            transform_func=transform,
-                                            transform_func_kwargs={'target_shape': target_shape},
-                                            standardize_data=True,
-                                            # standardize_data=False,
-                                            subtract_data_mean=True,
-                                            standardize_labels_across_samples=True,
-                                            mode='test',
-                                            transform_positions_to_snake_path=True,
-                                            dp_subselect_for_each_fly=(16774, 23853),
-                                            scan_id_included=[85])
+    # gen = FromPtychoShelvesDatasetGenerator(data_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/results/ML_recon',
+    #                                         label_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/results/ML_recon',
+    #                                         output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/test/data_085.h5',
+    #                                         # output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/bnp/data/train/data_77.h5',
+    #                                         target_shape=target_shape,
+    #                                         target_psize_nm=20,
+    #                                         target_label_psize_nm=4,
+    #                                         transform_func=transform,
+    #                                         transform_func_kwargs={'target_shape': target_shape},
+    #                                         standardize_data=True,
+    #                                         # standardize_data=False,
+    #                                         subtract_data_mean=True,
+    #                                         standardize_labels_across_samples=True,
+    #                                         mode='test',
+    #                                         transform_positions_to_snake_path=True,
+    #                                         dp_subselect_for_each_fly=(16774, 23853),
+    #                                         scan_id_included=[85])
+    # gen = FromAdorymDatasetGenerator(data_path='/data/programs/probe_position_correction_w_ptychonn/workspace/2idd_siemens_star/data/raw/data.h5',
+    #                                  label_path='/data/programs/probe_position_correction_w_ptychonn/workspace/2idd_siemens_star/data/raw',
+    #                                  output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/2idd_siemens_star/data/train/data_train_labelPsize_16_every2Rows.h5',
+    #                                  probe_path='/data/programs/probe_position_correction_w_ptychonn/workspace/2idd_siemens_star/data/raw',
+    #                                  pos_range_x=(134, 606 - 134),
+    #                                  pos_range_y=(134, 618 - 134),
+    #                                  dp_indices_included=np.concatenate([list(range(i * 70, (i + 1) * 70)) for i in range(0, 70, 2)]),
+    #                                  target_shape=target_shape,
+    #                                  target_dp_psize_nm=20,
+    #                                  target_label_psize_nm=16,
+    #                                  # transform_func=transform,
+    #                                  # transform_func_kwargs={'target_shape': target_shape},
+    #                                  standardize_data=True,
+    #                                  # standardize_data=False,
+    #                                  subtract_data_mean=True,
+    #                                  standardize_labels_across_samples=True,
+    #                                  transform_positions_to_snake_path=False,
+    #                                  augmentation=False)
+    gen = FromAdorymDatasetGenerator(data_path='/data/programs/probe_position_correction_w_ptychonn/workspace/2idd_siemens_star/data/raw/data.h5',
+                                     label_path='/data/programs/probe_position_correction_w_ptychonn/workspace/2idd_siemens_star/data/raw',
+                                     output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/2idd_siemens_star/data/test/data_test_labelPsize_16_every2Rows.h5',
+                                     pos_range_x=(134, 606 - 134),
+                                     pos_range_y=(134, 618 - 134),
+                                     dp_indices_included=np.concatenate([list(range(i * 70, (i + 1) * 70)) for i in range(1, 70, 2)]),
+                                     target_shape=target_shape,
+                                     target_dp_psize_nm=20,
+                                     target_label_psize_nm=16,
+                                     # transform_func=transform,
+                                     # transform_func_kwargs={'target_shape': target_shape},
+                                     standardize_data=True,
+                                     # standardize_data=False,
+                                     subtract_data_mean=True,
+                                     standardize_labels_across_samples=True,
+                                     transform_positions_to_snake_path=True)
+    # gen = FromPtychoNNHDF5DatasetGenerator(data_path='/data/programs/probe_position_correction_w_ptychonn/workspace/large/data/data_train.h5',
+    #                                  label_path='/data/programs/probe_position_correction_w_ptychonn/workspace/large/data/data_train.h5',
+    #                                  probe_path='/data/programs/probe_position_correction_w_ptychonn/workspace/2idd_siemens_star/data/raw',
+    #                                  output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/2idd_siemens_star/data/train/data_pretrain_dataStd_0_dataMeanSub_0_labelStd_0_labelPsize_6.h5',
+    #                                  # output_path='/data/programs/probe_position_correction_w_ptychonn/workspace/2idd_siemens_star/data/train/data_pretrain_labelPsize_6.h5',
+    #                                  target_shape=target_shape,
+    #                                  original_label_psize_nm=8,
+    #                                  original_probe_psize_nm=13.28,
+    #                                  target_dp_psize_nm=20,
+    #                                  target_label_psize_nm=6,
+    #                                  # transform_func=transform,
+    #                                  # transform_func_kwargs={'target_shape': target_shape},
+    #                                  standardize_data=False,
+    #                                  # standardize_data=False,
+    #                                  subtract_data_mean=False,
+    #                                  standardize_labels_across_samples=False,
+    #                                  transform_positions_to_snake_path=False)
     gen.debug = True
     gen.build()
     gen.run()
