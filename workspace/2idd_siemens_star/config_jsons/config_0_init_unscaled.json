@@ -19,15 +19,15 @@
   "sift_outlier_removal_method": "trial_error",
   "num_neighbors_collective": 8,
   "num_neighbors_collective_multiiter": [8, 8],
-  "min_roi_stddev": 0.6,
+  "min_roi_stddev": 0.01,
   "do_subpixel": false,
   "use_fast_errormap": true,
-  "nonhybrid_registration_tol": 8e-3,
+  "nonhybrid_registration_tol": 3e-4,
   "subpixel_fitting_window_size": 10,
   "subpixel_diff_tolerance": 7,
   "subpixel_fitting_check_coefficients": false,
   "errormap_error_check_tol": null,
-  "registration_tol_schedule": [[1190, 16e-3]],
+  "registration_tol_schedule": [[980, 4e-4]],
   "hybrid_registration_algs_multiiter": [
     [
       "error_map_expandable",
