@@ -78,6 +78,7 @@ class InferenceConfigDict(ConfigDict):
         self['registration_method'] = 'error_map'
         # Method for detecting outlier matches for SIFT. Can be "trial_error", "kmeans", "isoforest", "ransac".
         self['do_subpixel'] = True
+        self['use_fast_errormap'] = False
         self['sift_outlier_removal_method'] = 'kmeans'
         # The length of the near-boundary region of the image. When doing SIFT registration, if a matching pair of
         # keypoints involve points in this region, it will be discarded. However, if all matches (after outlier removal)
@@ -91,7 +92,15 @@ class InferenceConfigDict(ConfigDict):
         self['hybrid_registration_tols'] = [0.15, 0.3, 0.3]
         # Error tolerance for non-hybrid registration. This value is disregarded if registration method is hybrid.
         self['nonhybrid_registration_tol'] = None
+        self['registration_tol_schedule'] = None
+        # The schedule of error tolerance for registration algorithms. This should be a (N, 2) list. In each sub-list,
+        # the first value is the index of point, and the second value is the new tolerance value to be used at and
+        # after that point.
         self['min_roi_stddev'] = 0.2
+        self['subpixel_fitting_window_size'] = 5
+        self['subpixel_diff_tolerance'] = 2
+        self['subpixel_fitting_check_coefficients'] = True
+        self['errormap_error_check_tol'] = 0.3
 
         # ===== General configs =====
         self['dp_data_file_path'] = None

@@ -3,14 +3,16 @@ import logging
 import warnings
 
 import numpy as np
-import skimage.registration
 import skimage.feature
 import sklearn.cluster
 import sklearn.ensemble
 import matplotlib.pyplot as plt
 import scipy.ndimage as ndi
+import scipy.signal
+import skimage
 
 from pppc.message_logger import logger
+import pppc.skimage_registration.phase_cross_correlation as phasecorr
 
 
 class Registrator:
@@ -61,6 +63,23 @@ class Registrator:
     def get_status_code(self, key):
         return self.algorithm.status_dict[key]
 
+    def update_tol_by_tol_schedule(self, i_point, tol_schedule):
+        tol_schedule = np.array(tol_schedule)
+        transition_points = tol_schedule[:, 0].astype(int)
+        m = i_point == transition_points
+        if np.count_nonzero(m) == 0:
+            return
+        else:
+            i_stage = np.where(m)[0][-1]
+            new_tol = tol_schedule[i_stage, 1]
+            if np.abs(self.algorithm.tol - new_tol) > 1e-8:
+                self.update_tol(new_tol)
+                logger.info('Updated tol to {}.'.format(new_tol))
+
+    def update_tol(self, new_tol):
+        self.kwargs['tol'] = new_tol
+        self.algorithm.tol = new_tol
+
 
 class RegistrationAlgorithm:
     def __init__(self, tol=0.3, min_roi_stddev=0.2, *args, **kwargs):
@@ -80,6 +99,22 @@ class RegistrationAlgorithm:
 
         sy, sx, ey, ex = self.calculate_metric_region_for_shifted_image(offset, prev.shape)
         error = np.mean((prev_shifted[sy:ey, sx:ex] - curr[sy:ey, sx:ex]) ** 2)
+        # if np.count_nonzero(np.abs(offset) > 16) or error > tol:
+        # if error > 0.01:
+        #     fig, ax = plt.subplots(1, 5, figsize=(13, 3))
+        #     ax[0].imshow(prev)
+        #     ax[0].grid('both')
+        #     ax[1].imshow(curr)
+        #     ax[1].grid('both')
+        #     ax[2].imshow(prev_shifted)
+        #     ax[2].grid('both')
+        #     ax[3].imshow(prev_shifted - curr)
+        #     ax[3].grid('both')
+        #     if isinstance(self, ErrorMapRegistrationAlgorithm):
+        #         ax[4].imshow(self.error_map)
+        #     plt.suptitle('{} {} {}'.format(str(self), offset, error))
+        #     plt.tight_layout()
+        #     plt.show()
         if error > tol and update_status:
             logger.info('Large error after applying offset ({}).'.format(error))
             self.status = self.status_dict['bad']
@@ -164,20 +199,31 @@ class HybridRegistrationAlgorithm(RegistrationAlgorithm):
         ###
 
 class PhaseCorrelationRegistrationAlgorithm(RegistrationAlgorithm):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, method='cross_correlation', *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.method = method
 
     def run(self, previous, current, *args, **kwargs):
-        previous -= np.mean(previous)
-        current -= np.mean(current)
-        offset = skimage.registration.phase_cross_correlation(current, previous, upsample_factor=10)
-        offset = offset[0]
+        # previous -= np.mean(previous)
+        # current -= np.mean(current)
+        self.status = self.status_dict['ok']
+        if self.method == 'phase_correlation':
+            offset = phasecorr.phase_cross_correlation(current, previous, upsample_factor=10)[0]
+        else:
+            previous_croppped = previous[40:previous.shape[0] - 40, 40:previous.shape[1] - 40]
+            cc_map = scipy.signal.correlate2d(current, previous_croppped, mode='valid')
+            offset = np.unravel_index(np.argmax(cc_map), shape=cc_map.shape) - np.array(cc_map.shape) // 2
+
         offset = -offset
+        self.check_offset_quality(previous, current, offset, tol=self.tol, min_roi_stddev=self.min_roi_stddev)
         return offset
 
 
 class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
-    def __init__(self, max_shift=7, subpixel=True, n_levels=1, starting_max_shift=30, *args, **kwargs):
+    def __init__(self, max_shift=7, subpixel=True, n_levels=1, starting_max_shift=30,
+                 subpixel_fitting_window_size=5, subpixel_diff_tolerance=2, downsample=1,
+                 use_fast_errormap=False, subpixel_fitting_check_coefficients=True,
+                 errormap_error_check_tol=0.3, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_shift = max_shift
         self.starting_max_shift = min(self.max_shift, starting_max_shift)
@@ -185,6 +231,12 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
         self.subpixel = subpixel
         self.error_map = None
         self.n_levels = n_levels
+        self.subpixel_fitting_window_size = subpixel_fitting_window_size
+        self.subpixel_diff_tolerance = subpixel_diff_tolerance
+        self.downsample = downsample
+        self.use_fast_errormap = use_fast_errormap
+        self.errormap_error_check_tol = errormap_error_check_tol
+        self.subpixel_fitting_check_coefficients = subpixel_fitting_check_coefficients
 
     def run(self, previous, current, *args, **kwargs):
         if self.n_levels == 1:
@@ -235,14 +287,23 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
         return offset
 
     def run_expandable(self, previous, current, *args, **kwargs):
+        if self.downsample > 1:
+            previous = ndi.zoom(previous, 1. / self.downsample)
+            current = ndi.zoom(current, 1. / self.downsample)
+            self.starting_max_shift = int(self.starting_max_shift / self.downsample)
+            self.max_shift = int(self.max_shift / self.downsample)
         self.status = self.status_dict['ok']
         offset = None
         current_max_shift = self.starting_max_shift
         offset = [np.inf, np.inf]
         while (self.status in [self.status_dict['ok'], self.status_dict['questionable']] and
                current_max_shift <= self.max_shift):
-            offset, coeffs, min_error = self.run_with_current_max_shift(previous, current,
-                                                                        current_max_shift)
+            if not self.use_fast_errormap:
+                offset, coeffs, min_error = self.run_with_current_max_shift(previous, current,
+                                                                            current_max_shift)
+            else:
+                offset, coeffs, min_error = self.run_with_current_max_shift_fast(previous, current,
+                                                                                 current_max_shift)
             self.check_fitting_result(coeffs, min_error)
             if self.status == self.status_dict['ok']:
                 break
@@ -259,7 +320,33 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
                                 'min_error = {})'.format(current_max_shift, offset, min_error))
         self.check_offset(offset)
         self.check_offset_quality(previous, current, offset, tol=self.tol, min_roi_stddev=self.min_roi_stddev)
-        return offset
+        return offset * self.downsample
+
+    def run_with_current_max_shift_fast(self, previous, current, max_shift=None, y_range=None, x_range=None):
+        if max_shift is not None:
+            y_range = [-max_shift, max_shift]
+            x_range = [-max_shift, max_shift]
+        len_range = [y_range[1] - y_range[0] + 1, x_range[1] - x_range[0] + 1]
+        self.error_map = np.zeros(len_range)
+        previous_cropped = previous[max(0, -y_range[0]):min(previous.shape[0], previous.shape[0] - y_range[1]),
+                                    max(0, -x_range[0]):min(previous.shape[1], previous.shape[1] - x_range[1])]
+        tl_of_croppped_in_full = np.array([max(0, -y_range[0]), max(0, -x_range[0])])
+
+        for dy in range(y_range[0], y_range[1] + 1):
+            for dx in range(x_range[0], x_range[1] + 1):
+                current_window = current[
+                         tl_of_croppped_in_full[0] + dy:tl_of_croppped_in_full[0] + dy + previous_cropped.shape[0],
+                         tl_of_croppped_in_full[1] + dx:tl_of_croppped_in_full[1] + dx + previous_cropped.shape[1]]
+                err = skimage.metrics.mean_squared_error(current_window, previous_cropped)
+                self.error_map[dy - y_range[0], dx - x_range[0]] = err
+        self.error_map = ndi.uniform_filter(self.error_map, size=5, mode='reflect')
+        min_error = np.min(self.error_map)
+        i_min_error = np.unravel_index(np.argmin(self.error_map), self.error_map.shape)
+        int_offset = np.array(i_min_error) + [y_range[0], x_range[0]]
+
+        offset = int_offset
+        offset = -np.array(offset)
+        return offset, None, min_error
 
     def run_with_current_max_shift(self, previous, current, max_shift=None, y_range=None, x_range=None):
         if max_shift is not None:
@@ -295,9 +382,10 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
         i_min_error = np.argmin(result_table[:, 2])
         int_offset = result_table[i_min_error, :2]
         if self.subpixel:
-            offset, coeffs = self.__class__._fit_quadratic_peak_in_error_map(result_table, return_coeffs=True)
+            offset, coeffs = self.__class__._fit_quadratic_peak_in_error_map(result_table, return_coeffs=True,
+                    window_size=self.subpixel_fitting_window_size)
             # Reject fitting result if too far from integer solution
-            if not np.all(np.abs(offset - int_offset) < 2):
+            if not np.all(np.abs(offset - int_offset) < self.subpixel_diff_tolerance):
                 logger.info('Rejected quadratic fitting because it is too far away from integer solution.')
                 offset = int_offset
             # Probe position offset is opposite to image offset.
@@ -320,12 +408,13 @@ class ErrorMapRegistrationAlgorithm(RegistrationAlgorithm):
             return offset, None, min_error
 
     def check_fitting_result(self, coeffs, min_error):
-        if self.subpixel:
+        if self.subpixel and self.subpixel_fitting_check_coefficients:
             a, b = coeffs[:2]
             if a < 1e-3 or b < 1e-3:
                 self.status = self.status_dict['questionable']
                 return
-        if min_error > 0.3:
+        min_error_tol = self.errormap_error_check_tol if self.errormap_error_check_tol is not None else self.tol
+        if min_error > min_error_tol:
             self.status = self.status_dict['questionable']
             return
         self.status = self.status_dict['ok']

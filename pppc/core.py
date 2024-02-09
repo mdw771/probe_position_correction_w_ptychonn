@@ -122,6 +122,30 @@ class PtychoNNProbePositionCorrector:
         self.count_bad_offset = 0
         self.row_index_list = []
 
+    def get_registrator_arguments_from_config_dict(self):
+        kwargs = {
+            'method': self.config_dict['registration_method'],
+            'max_shift': self.config_dict['max_shift'],
+            'random_seed': self.config_dict['random_seed'],
+            'subpixel': self.config_dict['do_subpixel'],
+            'outlier_removal_method': self.config_dict['sift_outlier_removal_method'],
+            'boundary_exclusion_length': self.config_dict['sift_border_exclusion_length'],
+            'downsample': self.config_dict['registration_downsample'],
+            'algs': self.config_dict['hybrid_registration_algs'],
+            'tols': self.config_dict['hybrid_registration_tols'],
+            'tol': self.config_dict['nonhybrid_registration_tol'],
+            'min_roi_stddev': self.config_dict['min_roi_stddev'],
+            'use_baseline_offsets_for_uncertain_pairs': self.config_dict[
+                'use_baseline_offsets_for_uncertain_pairs'
+            ],
+            'subpixel_fit_window_size': self.config_dict['subpixel_fitting_window_size'],
+            'subpixel_diff_tolerance': self.config_dict['subpixel_diff_tolerance'],
+            'use_fast_errormap': self.config_dict['use_fast_errormap'],
+            'subpixel_fitting_check_coefficients': self.config_dict['subpixel_fitting_check_coefficients'],
+            'errormap_error_check_tol': self.config_dict['errormap_error_check_tol']
+        }
+        return kwargs
+
     def build(self):
         if self.config_dict['random_seed'] is not None:
             logger.info('Random seed is set to {}.'.format(self.config_dict['random_seed']))
@@ -143,20 +167,7 @@ class PtychoNNProbePositionCorrector:
             self.orig_probe_positions = self.config_dict['probe_position_list']
         self.new_probe_positions = self.orig_probe_positions.copy_with_zeros()
 
-        self.registrator = Registrator(method=self.config_dict['registration_method'],
-                                       max_shift=self.config_dict['max_shift'],
-                                       random_seed=self.config_dict['random_seed'],
-                                       subpixel=self.config_dict['do_subpixel'],
-                                       outlier_removal_method=self.config_dict['sift_outlier_removal_method'],
-                                       boundary_exclusion_length=self.config_dict['sift_border_exclusion_length'],
-                                       downsample=self.config_dict['registration_downsample'],
-                                       algs=self.config_dict['hybrid_registration_algs'],
-                                       tols=self.config_dict['hybrid_registration_tols'],
-                                       tol=self.config_dict['nonhybrid_registration_tol'],
-                                       min_roi_stddev=self.config_dict['min_roi_stddev'],
-                                       use_baseline_offsets_for_uncertain_pairs=self.config_dict[
-                                           'use_baseline_offsets_for_uncertain_pairs'
-                                       ])
+        self.registrator = Registrator(**self.get_registrator_arguments_from_config_dict())
 
         if self.config_dict['rectangular_grid'] and self.config_dict['use_baseline_offsets_for_points_on_same_row']:
             self.build_row_index_list()
@@ -278,6 +289,8 @@ class PtychoNNProbePositionCorrector:
         nn_engine.fit(self.orig_probe_positions.array)
         nn_dists, nn_inds = nn_engine.kneighbors(self.orig_probe_positions.array)
         for i_dp, this_orig_pos in enumerate(tqdm(self.orig_probe_positions.array)):
+            if self.config_dict['registration_tol_schedule']:
+                self.registrator.update_tol_by_tol_schedule(i_dp, self.config_dict['registration_tol_schedule'])
             this_knn_inds = nn_inds[i_dp, 1:]
             this_neighbors_inds = self.get_neightbor_inds(i_dp, this_knn_inds)
 
@@ -302,11 +315,12 @@ class PtychoNNProbePositionCorrector:
                     self.registrator.algorithm.status = self.registrator.get_status_code('ok')
                 else:
                     offset = self.registrator.run(neighbor_obj, current_obj)
+                    print('{} - {}: {}'.format(i_dp, ind_neighbor, offset))
                     if self.debug and self.registrator.get_status() != self.registrator.get_status_code('empty'):
                         fig, ax = plt.subplots(1, 2)
-                        im = ax[0].imshow(neighbor_obj, vmin=-0.5, vmax=-0.2)
+                        im = ax[0].imshow(neighbor_obj, vmin=-0.2, vmax=0.2)
                         plt.colorbar(im)
-                        im = ax[1].imshow(current_obj, vmin=-0.5, vmax=-0.2)
+                        im = ax[1].imshow(current_obj, vmin=-0.2, vmax=0.2)
                         plt.colorbar(im)
                         plt.suptitle('Index {} - {}'.format(i_dp, ind_neighbor))
                         plt.show()
