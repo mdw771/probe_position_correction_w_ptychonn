@@ -347,10 +347,11 @@ class TikeReconstruction:
         g_mse = np.mean(np.sum((g2 - g1) ** 2, axis=1))
         return g_mse
 
-scan_indices = [233, 234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
-# scan_indices = [246,]
+# scan_indices = [233, 234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
+#scan_indices = [233, 235, 236, 239, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
+scan_indices = [234, 240]
 # config_list = [('true', 0), ('baseline', 0), ('baseline', 1), ('calculated', 0), ('calculated', 1)]
-config_list = [('baseline', 1), ('calculated', 1)]
+config_list = [('calculated', 0), ('calculated', 1)]
 
 for scan_idx in scan_indices:
     for type, pos_corr in config_list:

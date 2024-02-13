@@ -17,7 +17,7 @@
     1e-4
   ],
   "sift_outlier_removal_method": "trial_error",
-  "num_neighbors_collective": 5,
+  "num_neighbors_collective": 8,
   "hybrid_registration_algs_multiiter": [
     [
       "error_map_expandable",
@@ -31,11 +31,11 @@
   "hybrid_registration_tols_multiiter": [
     [
       0.15,
-      0.15
+      0.1
     ],
     [
       0.15,
-      0.2
+      0.1
     ]
   ]
 }

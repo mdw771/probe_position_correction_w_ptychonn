@@ -135,7 +135,7 @@ if __name__ == '__main__':
     scan_indices = [233, 235, 234, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
     # scan_indices = [235, 240, 246, ]
     # scan_indices = [247]
-    decimation_ratios = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]
+    decimation_ratios = [0.01, 0.02, 0.05, 0.1]
 
     for scan_idx in scan_indices[rank::n_ranks]:
         for decimation_ratio in decimation_ratios:

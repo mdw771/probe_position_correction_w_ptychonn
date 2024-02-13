@@ -10,8 +10,9 @@ from pppc.helper import transform_data_for_ptychonn
 
 class HDF5Dataset(Dataset):
     def __init__(self, filename, transform_func='default', transform_func_kwargs=None,
-                 label_transform_func=None,
-                 standardized=False, verbose=False):
+                 label_transform_func=None, standardized=False, subtract_mean_and_standardize_data=False,
+                 standardize_labels=False,
+                 verbose=False):
         self.filename = filename
         self.f = h5py.File(self.filename, 'r')
         self.verbose = verbose
@@ -26,6 +27,33 @@ class HDF5Dataset(Dataset):
         if transform_func_kwargs is None:
             transform_func_kwargs = {}
         self.transform_func_kwargs = transform_func_kwargs
+        self.subtract_mean_and_standardize_data = subtract_mean_and_standardize_data
+        self.standardize_labels = standardize_labels
+
+        self.mean_dp = None
+        self.mean_of_all_data = None
+        self.std_of_all_data = None
+        self.mean_of_all_labels_phase = None
+        self.std_of_all_labels_phase = None
+        self.mean_of_all_labels_mag = None
+        self.std_of_all_labels_mag = None
+        if self.subtract_mean_and_standardize_data:
+            self.mean_dp = np.mean(self.f['data/reciprocal'][...], axis=0)
+            self.mean_of_all_data = np.mean(self.f['data/reciprocal'][...])
+            self.std_of_all_data = np.std(self.f['data/reciprocal'][...])
+        if self.standardize_labels:
+            if 'real_phase' in self.f['data'].keys():
+                self.mean_of_all_labels_phase = np.mean(self.f['data/real_phase'][...])
+                self.std_of_all_labels_phase = np.mean(self.f['data/real_phase'][...])
+                self.mean_of_all_labels_mag = np.mean(self.f['data/real_magnitude'][...])
+                self.std_of_all_labels_mag = np.mean(self.f['data/real_magnitude'][...])
+            else:
+                labels_phase = np.angle(self.f['data/real'])
+                labels_mag = np.abs(self.f['data/real'])
+                self.mean_of_all_labels_phase = np.mean(labels_phase)
+                self.std_of_all_labels_phase = np.std(labels_phase)
+                self.mean_of_all_labels_mag = np.mean(labels_mag)
+                self.std_of_all_labels_mag = np.std(labels_mag)
 
     def __len__(self):
         if self.read_complex:
@@ -74,6 +102,15 @@ class HDF5Dataset(Dataset):
         if not self.standardized:
             dp = np.where(dp < 3, 0, dp)
         # Reshape to (N, C, H, W) and cast to tensor.
+
+        # Standardization and mean subtraction
+        if self.subtract_mean_and_standardize_data:
+            dp = dp - self.mean_dp
+            dp = (dp - self.mean_of_all_data) / self.std_of_all_data
+        if self.standardize_labels:
+            real_phase = (real_phase - self.mean_of_all_labels_phase) / self.std_of_all_labels_phase * 0.1
+            real_mag = (real_mag - self.mean_of_all_labels_mag) / self.std_of_all_labels_mag
+
         if len(dp.shape) == 3:
             dp = torch.tensor(dp[:, np.newaxis, :, :].astype('float32'))
             real_mag = torch.tensor(real_mag[:, np.newaxis, :, :].astype('float32'))
