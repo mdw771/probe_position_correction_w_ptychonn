@@ -128,6 +128,9 @@ class InferenceConfigDict(ConfigDict):
         self['use_baseline_offsets_for_uncertain_pairs'] = False
         self['rectangular_grid'] = False
         self['use_baseline_offsets_for_points_on_same_row'] = False
+        # If True, if a point is not successfully registered with any neighbor in collective mode, it will fill
+        # the linear system with the offsets of the two adjacently indexed points to that point from baseline positions.
+        self['use_baseline_offsets_for_unregistered_points'] = False
         self['stitching_downsampling'] = 1
         self['random_seed'] = 123
         self['debug'] = None

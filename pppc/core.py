@@ -315,7 +315,7 @@ class PtychoNNProbePositionCorrector:
                     self.registrator.algorithm.status = self.registrator.get_status_code('ok')
                 else:
                     offset = self.registrator.run(neighbor_obj, current_obj)
-                    print('{} - {}: {}'.format(i_dp, ind_neighbor, offset))
+                    # print('{} - {}: {}'.format(i_dp, ind_neighbor, offset))
                     if self.debug and self.registrator.get_status() != self.registrator.get_status_code('empty'):
                         fig, ax = plt.subplots(1, 2)
                         im = ax[0].imshow(neighbor_obj, vmin=-0.2, vmax=0.2)
@@ -338,6 +338,33 @@ class PtychoNNProbePositionCorrector:
                     self.a_mat.append(self._generate_amat_row(i_dp, ind_neighbor))
         self.a_mat = np.stack(self.a_mat)
         self.b_vec = np.stack(self.b_vec)
+        if self.config_dict['use_baseline_offsets_for_unregistered_points']:
+            self.fill_gaps_in_linear_system()
+
+    def fill_gaps_in_linear_system(self):
+        unregistered_indices = np.where(np.count_nonzero(self.a_mat, axis=0) == 0)[0]
+        if len(unregistered_indices) > 0:
+            a_appendix = []
+            b_appendix = []
+            for ind in unregistered_indices:
+                if ind > 0:
+                    a_row = np.zeros(self.a_mat.shape[1])
+                    a_row[ind] = 1
+                    a_row[ind - 1] = -1
+                    b_row = self.orig_probe_positions.array[ind] - self.orig_probe_positions.array[ind - 1]
+                    a_appendix.append(a_row)
+                    b_appendix.append(b_row)
+                if ind < self.a_mat.shape[1] - 1:
+                    a_row = np.zeros(self.a_mat.shape[1])
+                    a_row[ind] = 1
+                    a_row[ind + 1] = -1
+                    b_row = self.orig_probe_positions.array[ind] - self.orig_probe_positions.array[ind + 1]
+                    a_appendix.append(a_row)
+                    b_appendix.append(b_row)
+            a_appendix = np.stack(a_appendix, axis=0)
+            b_appendix = np.stack(b_appendix, axis=0)
+            self.a_mat = np.concatenate([self.a_mat, a_appendix], axis=0)
+            self.b_vec = np.concatenate([self.b_vec, b_appendix], axis=0)
 
     def solve_linear_system(self, mode='residue', smooth_constraint_weight=1e-3):
         a_mat = self.a_mat

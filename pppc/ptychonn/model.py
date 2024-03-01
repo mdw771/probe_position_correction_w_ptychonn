@@ -301,3 +301,9 @@ class PtychoNNTransposedConvModel(nn.Module):
         ph = ph * np.pi  # Using tanh activation (-1 to 1) for phase so multiply by pi
 
         return amp, ph
+
+
+if __name__ == '__main__':
+    import torchinfo
+    model = PtychoNNPhaseOnlyModel(use_batchnorm=True)
+    torchinfo.summary(model, (1, 1, 128, 128), device='cpu')
