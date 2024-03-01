@@ -1,6 +1,7 @@
 import sys
 import os
 import collections
+import time
 
 import numpy as np
 import matplotlib
@@ -26,7 +27,7 @@ except:
     n_ranks = 1
 
 
-def run_pos_corr(scan_idx, image_path, save_path='outputs'):
+def run_pos_corr(scan_idx, image_path, save_path='outputs', use_baseline=False, config_file_postfix_to_use_if_any=None):
     save_figs = True
     output_dir = os.path.join(save_path, 'test{}'.format(scan_idx))
     if not os.path.isdir(output_dir):
@@ -66,11 +67,32 @@ def run_pos_corr(scan_idx, image_path, save_path='outputs'):
     config_dict['ptycho_reconstructor'].set_object_image_array(recons)
     config_dict['random_seed'] = 196 
     config_dict['debug'] = False
-    config_dict['probe_position_list'] = None if scan_idx != 247 else ProbePositionList(position_list=probe_pos_list_baseline)
     config_dict['central_crop'] = None
-    config_dict['baseline_position_list'] = ProbePositionList(position_list=probe_pos_list_baseline)
 
-    config_dict.load_from_json(os.path.join('config_jsons', 'config_{}.json'.format(scan_idx)))
+    if use_baseline:
+        config_dict['probe_position_list'] = ProbePositionList(position_list=probe_pos_list_baseline)
+        config_dict['baseline_position_list'] = None
+    else:
+        config_dict['probe_position_list'] = None if scan_idx != 247 else ProbePositionList(position_list=probe_pos_list_baseline)
+        config_dict['baseline_position_list'] = ProbePositionList(position_list=probe_pos_list_baseline)
+
+    # Load config
+    config_fname = os.path.join('config_jsons', 'config_{}.json'.format(scan_idx))
+    if config_file_postfix_to_use_if_any is not None:
+        temp_fname = os.path.join('config_jsons', 'config_{}_{}.json'.format(scan_idx, config_file_postfix_to_use_if_any))
+        if os.path.exists(temp_fname):
+            config_fname = temp_fname
+    config_dict.load_from_json(config_fname)
+
+    # If using baseline as initial guess, skip serial mode iteration.
+    if use_baseline:
+        print('Skipping serial mode iteration because use_baseline is True.')
+        time.sleep(3)
+        if 'method_multiiter' in config_dict.keys() and config_dict['method_multiiter'][0] == 'serial':
+            for key in config_dict.keys():
+                if 'multiiter' in key:
+                    config_dict[key] = config_dict[key][1:]
+
     print(config_dict)
 
     corrector_chain = ProbePositionCorrectorChain(config_dict)
@@ -81,7 +103,7 @@ def run_pos_corr(scan_idx, image_path, save_path='outputs'):
     corrector_s = corrector_chain.corrector_list[-1]
     fig, ax, scat = corrector_s.new_probe_positions.plot(return_obj=True, show=False)
     if save_figs:
-        fig.savefig(os.path.join(output_dir, 'path_plot_serial.pdf'.format(scan_idx)))
+        fig.savefig(os.path.join(output_dir, 'path_plot_iter_0.pdf'.format(scan_idx)))
     else:
         plt.show()
 
@@ -131,35 +153,41 @@ def run_pos_corr(scan_idx, image_path, save_path='outputs'):
 
 
 if __name__ == '__main__':
-    matplotlib.rc('font', family='Times New Roman')
-    matplotlib.rcParams['font.size'] = 14
+    matplotlib.rcParams['pdf.fonttype'] = 'truetype'
+    fontProperties = {'family': 'serif', 'serif': ['Times New Roman'], 'weight': 'normal', 'size': 12}
+    plt.rc('font', **fontProperties)
     plt.viridis()
 
+    use_baseline = True
+
     # scan_indices = [233, 235, 234, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
-    scan_indices = [240]
-    # scan_indices = [246]
-    decimate_ratios = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2]
+    # scan_indices = [233]
+    scan_indices = [234, 239, 240]
+    # decimate_ratios = [0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.02, 0.01]
+    decimate_ratios = [0.7]
 
-#    for decimate_ratio in decimate_ratios:
-#        for scan_idx in scan_indices[rank::n_ranks]:
-#            print('==========================')
-#            print('Now running {}'.format(scan_idx))
-#            print('==========================')
-#            # run_pos_corr(scan_idx,
-#            #              'outputs/pred_test{}_model_36SpiralDatasets_cleaned_valRatio_10/pred_phase.tiff'.format(scan_idx),
-#            #              save_path='outputs'
-#            #              )
-#            run_pos_corr(scan_idx,
-#                         'outputs/pred_test{}_model_36SpiralDatasets_dataDecimation_{}/pred_phase.tiff'.format(scan_idx, decimate_ratio),
-#                         save_path='outputs/dataDecimation_{}'.format(decimate_ratio)
-#                         )
+    for decimate_ratio in decimate_ratios:
+        for scan_idx in scan_indices[rank::n_ranks]:
+            print('==========================')
+            print('Now running {}'.format(scan_idx))
+            print('==========================')
+            # run_pos_corr(scan_idx,
+            #              'outputs/pred_test{}_model_36SpiralDatasets_cleaned_valRatio_10/pred_phase.tiff'.format(scan_idx),
+            #              save_path='outputs'
+            #              )
+            run_pos_corr(scan_idx,
+                         'outputs/pred_test{}_model_phaseOnly_BN_36SpiralDatasets_meanSubStdData_dataDecimation_{}/pred_phase.tiff'.format(scan_idx, decimate_ratio),
+                         save_path='outputs/dataDecimation_{}'.format(decimate_ratio),
+                         use_baseline=use_baseline,
+                         config_file_postfix_to_use_if_any='decimation'
+                         )
 
-    for scan_idx in scan_indices[rank::n_ranks]:
-        print('==========================')
-        print('Now running {}'.format(scan_idx))
-        print('==========================')
-        run_pos_corr(scan_idx,
-                     'outputs/pred_test{}_model_phaseOnly_BN_36SpiralDatasets_meanSubStdData_cleaned_valRatio_10/pred_phase.tiff'.format(scan_idx),
-                     save_path='outputs'
-                     )
+#    for scan_idx in scan_indices[rank::n_ranks]:
+#        print('==========================')
+#        print('Now running {}'.format(scan_idx))
+#        print('==========================')
+#        run_pos_corr(scan_idx,
+#                     'outputs/pred_test{}_model_phaseOnly_BN_36SpiralDatasets_meanSubStdData_cleaned_valRatio_10/pred_phase.tiff'.format(scan_idx),
+#                     save_path='outputs'
+#                     )
 
