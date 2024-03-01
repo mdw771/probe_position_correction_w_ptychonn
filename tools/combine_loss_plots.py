@@ -4,8 +4,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-matplotlib.rc('font',family='Times New Roman')
-matplotlib.rcParams['font.size'] = 14
+
+matplotlib.rcParams['pdf.fonttype'] = 'truetype'
+fontProperties = {'family': 'serif', 'serif': ['Times New Roman'], 'weight': 'normal', 'size': 12}
+plt.rc('font', **fontProperties)
 plt.viridis()
 
 fname_baseline = 'loss_history_baseline_pos_posCorr_1_clip_2.txt'
@@ -24,10 +26,14 @@ for d in dir_list:
         losses_baseline = np.loadtxt(os.path.join(d, fname_baseline))
         losses_calculated = np.loadtxt(os.path.join(d, fname_calculated))
 
-        fig = plt.figure()
-        plt.semilogy(losses_baseline, label='Uncorrected')
-        plt.semilogy(losses_calculated, label='Calculated')
-        plt.legend()
-        plt.savefig(os.path.join(d, 'loss_comparison_baseline_calc.pdf'))
+        fig, ax = plt.subplots(1, 1)
+        plt.semilogy(losses_baseline, label='Nominal', linestyle='--')
+        plt.semilogy(losses_calculated, label='Predicted')
+        plt.xlabel('Epoch', fontsize=20)
+        plt.ylabel('Reconstruction loss', fontsize=20)
+        plt.legend(frameon=False, fontsize=20)
+        ax.tick_params(axis='both', which='major', labelsize=20)
+        plt.tight_layout()
+        plt.savefig(os.path.join(d, 'loss_comparison_baseline_calc.pdf'), transparent=True)
     else:
         print('No files found in {}.'.format(d))

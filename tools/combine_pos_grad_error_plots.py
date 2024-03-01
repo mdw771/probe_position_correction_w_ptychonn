@@ -4,8 +4,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-matplotlib.rc('font',family='Times New Roman')
-matplotlib.rcParams['font.size'] = 14
+matplotlib.rcParams['pdf.fonttype'] = 'truetype'
+fontProperties = {'family': 'serif', 'serif': ['Times New Roman'], 'weight': 'normal', 'size': 12}
+plt.rc('font', **fontProperties)
 plt.viridis()
 
 fname_baseline = 'pos_grad_error_history_baseline_pos_posCorr_1_clip_2.txt'
@@ -28,12 +29,14 @@ for d in dir_list:
         losses_baseline = np.sqrt(losses_baseline)
         losses_calculated = np.sqrt(losses_calculated)
 
-        fig = plt.figure()
-        plt.semilogy(losses_baseline, label='Uncorrected')
-        plt.semilogy(losses_calculated, label='Calculated')
-        plt.xlabel('Epoch')
-        plt.ylabel('RMS of pairwise position error (pixel)')
-        plt.legend()
-        plt.savefig(os.path.join(d, 'pos_error_comparison_baseline_calc.pdf'))
+        fig, ax = plt.subplots(1, 1)
+        plt.semilogy(losses_baseline, label='Nominal', linestyle='--')
+        plt.semilogy(losses_calculated, label='Predicted')
+        plt.xlabel('Epoch', fontsize=20)
+        plt.ylabel('RMS-PPE (pixel)', fontsize=20)
+        ax.tick_params(axis='both', which='major', labelsize=20)
+        plt.legend(frameon=False, fontsize=20)
+        plt.tight_layout()
+        plt.savefig(os.path.join(d, 'pos_error_comparison_baseline_calc.pdf'), transparent=True)
     else:
         print('No files found in {}.'.format(d))

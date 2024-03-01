@@ -1,11 +1,13 @@
 import json
 import glob
+import os.path
 
 
 class JSONModifier:
 
-    def __init__(self, mod_dict):
+    def __init__(self, mod_dict, new_name_appendix=''):
         self.mod_dict = mod_dict
+        self.new_name_appendix = new_name_appendix
 
     def run(self):
         flist = glob.glob('*.json')
@@ -13,16 +15,13 @@ class JSONModifier:
             d = json.load(open(f, 'r'))
             for k, v in self.mod_dict.items():
                 d[k] = v
-            json.dump(d, open(f, 'w'), sort_keys=False, indent=2, separators=(',', ': '))
+            json.dump(d, open(os.path.splitext(f)[0] + self.new_name_appendix + os.path.splitext(f)[1], 'w'),
+                      sort_keys=False, indent=2, separators=(',', ': '))
 
 
 if __name__ == '__main__':
     mod_dict = {
-        "registration_method_multiiter": ["hybrid", "hybrid", "hybrid"],
-        "num_neighbors_collective": 4,
-        "smooth_constraint_weight_multiiter": [0, 0, 0],
-        "hybrid_registration_algs_multiiter": [["error_map_expandable", "sift"], ["error_map_expandable", "sift"], ["error_map_expandable", "sift"]],
-        "hybrid_registration_tols_multiiter": [[0.3, 0.15], [0.3, 0.15], [0.3, 0.15]]
+        "use_baseline_offsets_for_unregistered_points": True
     }
-    modifier = JSONModifier(mod_dict)
+    modifier = JSONModifier(mod_dict, new_name_appendix='_decimation')
     modifier.run()
