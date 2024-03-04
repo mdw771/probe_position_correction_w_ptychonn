@@ -121,6 +121,7 @@ class PtychoNNProbePositionCorrector:
         self.b_vec = np.array([])
         self.count_bad_offset = 0
         self.row_index_list = []
+        self.unregistered_indices = []
 
     def get_registrator_arguments_from_config_dict(self):
         kwargs = {
@@ -262,6 +263,7 @@ class PtychoNNProbePositionCorrector:
         """
         self.build_linear_system_for_collective_correction()
         self.solve_linear_system(mode='residue', smooth_constraint_weight=self.config_dict['smooth_constraint_weight'])
+        self.postprocess()
 
     def get_neightbor_inds(self, i_dp, knn_inds):
         this_neighbors_inds = []
@@ -342,11 +344,11 @@ class PtychoNNProbePositionCorrector:
             self.fill_gaps_in_linear_system()
 
     def fill_gaps_in_linear_system(self):
-        unregistered_indices = np.where(np.count_nonzero(self.a_mat, axis=0) == 0)[0]
-        if len(unregistered_indices) > 0:
+        self.unregistered_indices = np.where(np.count_nonzero(self.a_mat, axis=0) == 0)[0]
+        if len(self.unregistered_indices) > 0:
             a_appendix = []
             b_appendix = []
-            for ind in unregistered_indices:
+            for ind in self.unregistered_indices:
                 if ind > 0:
                     a_row = np.zeros(self.a_mat.shape[1])
                     a_row[ind] = 1
@@ -382,6 +384,16 @@ class PtychoNNProbePositionCorrector:
         else:
             self.new_probe_positions.array = np.linalg.pinv(a_mat) @ b_vec
 
+    def postprocess(self):
+        if self.config_dict['use_baseline_offsets_for_unregistered_points']:
+            for ind in self.unregistered_indices:
+                if ind > 0:
+                    baseline_offset = self.orig_probe_positions.array[ind] - self.orig_probe_positions.array[ind - 1]
+                    self.new_probe_positions.array[ind] = self.new_probe_positions.array[ind - 1] + baseline_offset
+                else:
+                    baseline_offset = self.orig_probe_positions.array[ind + 1] - self.orig_probe_positions.array[ind]
+                    self.new_probe_positions.array[ind] = self.new_probe_positions.array[ind + 1] - baseline_offset
+
     def get_square_roll_matrix(self):
         s_mat = np.eye(self.a_mat.shape[1]) * 2
         s_mat[0, 0] = 1
@@ -393,6 +405,7 @@ class PtychoNNProbePositionCorrector:
         off_diag_x_inds = tuple(range(s_mat.shape[0] - 1))
         s_mat[off_diag_y_inds, off_diag_x_inds] = -1
         return s_mat
+
 
     def _generate_amat_row(self, this_ind, neightbor_ind):
         a = np.zeros(self.n_dps)
