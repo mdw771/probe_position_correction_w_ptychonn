@@ -3,6 +3,7 @@ import collections
 import sys
 sys.path.insert(0, '/data/programs/probe_position_correction_w_ptychonn/pppc')
 sys.path.insert(0, '/data/programs/probe_position_correction_w_ptychonn')
+sys.path.insert(0, '/data/programs/probe_position_correction_w_ptychonn/tools/utils')
 import os
 
 import matplotlib
@@ -16,6 +17,8 @@ import pandas as pd
 import tike
 import tike.ptycho
 import tike.view
+
+from analysis_util import *
 
 matplotlib.rc('font',family='Times New Roman')
 matplotlib.rcParams['font.size'] = 14
@@ -33,6 +36,7 @@ class TikeReconstruction:
         self.probe_pos_history = []
         self.pos_error_history = []
         self.pos_grad_error_history = []
+        self.rms_ppe_n_history = []
         self.recon_error_history = []
         self.scaling_dict = collections.defaultdict(lambda: 1.0,
                                                     {236: 0.5, 239: 0.5, 240: 0.25, 241: 0.25, 242: 0.25, 250: 0.5,
@@ -175,8 +179,10 @@ class TikeReconstruction:
         self.plot_loss()
         self.plot_reconstruction()
         self.plot_path_comparison()
+        self.save_probe_position_history()
         # self.plot_probe_position_error_history()
         self.plot_probe_position_grad_error_history()
+        self.plot_rms_ppe_n_history(n=8)
         # self.plot_reconstruction_error_history()
         self.save_refined_positions()
 
@@ -272,6 +278,18 @@ class TikeReconstruction:
                     self.scan_idx, type_name, self.pos_corr_str)),
                     self.pos_grad_error_history)
 
+    def plot_rms_ppe_n_history(self, n=8):
+        if self.type != 'true' and self.do_pos_corr and self.record_intermediate_states:
+            self.rms_ppe_n_history = []
+            probe_pos_list_true = self.get_true_positions()
+            for i_epoch, this_pos_list in enumerate(self.probe_pos_history):
+                self.rms_ppe_n_history.append(calculate_rms_ppe_n(this_pos_list, probe_pos_list_true), n=n)
+            if self.save_figs:
+                type_name = self.output_type_name_mapping[self.type]
+                np.savetxt(os.path.join('outputs/test{}/rms_ppe_n_history_{}_{}.txt'.format(
+                    self.scan_idx, type_name, self.pos_corr_str)),
+                    self.rms_ppe_n_history)
+
     def plot_probe_position_error_history(self):
         if self.type != 'true' and self.do_pos_corr and self.record_intermediate_states:
             self.pos_error_history = []
@@ -295,6 +313,14 @@ class TikeReconstruction:
             plt.scatter(this_pos_list[:, 1], this_pos_list[:, 0], alpha=0.5)
             plt.plot(this_pos_list[:, 1], this_pos_list[:, 0], alpha=0.5)
         plt.show()
+
+
+    def save_probe_position_history(self):
+        if self.save_figs:
+            type_name = self.output_type_name_mapping[type]
+            np.save(os.path.join('outputs/test{}/pos_history_{}_{}.npy'.format(
+                self.scan_idx, type_name, self.pos_corr_str)),
+                np.array(self.probe_pos_history))
 
 
     def plot_reconstruction_error_history(self):
@@ -347,11 +373,11 @@ class TikeReconstruction:
         g_mse = np.mean(np.sum((g2 - g1) ** 2, axis=1))
         return g_mse
 
-# scan_indices = [233, 234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
+scan_indices = [233, 234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
 #scan_indices = [233, 235, 236, 239, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
-scan_indices = [253]
+# scan_indices = [233]
 # config_list = [('true', 0), ('baseline', 0), ('baseline', 1), ('calculated', 0), ('calculated', 1)]
-config_list = [('baseline', 1),]
+config_list = [('calculated', 1), ('baseline', 1)]
 
 for scan_idx in scan_indices:
     for type, pos_corr in config_list:

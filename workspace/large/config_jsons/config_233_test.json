@@ -1,0 +1,54 @@
+{
+  "method_multiiter": [
+    "serial",
+    "collective",
+    "collective"
+  ],
+  "registration_method_multiiter": [
+    "hybrid",
+    "hybrid",
+    "hybrid"
+  ],
+  "method": "serial",
+  "registration_method": "sift",
+  "max_shift": 40,
+  "central_crop": null,
+  "offset_estimator_order": 1,
+  "offset_estimator_beta": 0.5,
+  "smooth_constraint_weight_multiiter": [
+    0,
+    0,
+    0
+  ],
+  "sift_outlier_removal_method": "trial_error",
+  "num_neighbors_collective": 6,
+  "nonhybrid_registration_tol": 0.3,
+  "hybrid_registration_algs_multiiter": [
+    [
+      "error_map_expandable",
+      "sift"
+    ],
+    [
+      "error_map_expandable",
+      "sift"
+    ],
+    [
+      "error_map_expandable",
+      "sift"
+    ]
+  ],
+  "hybrid_registration_tols_multiiter": [
+    [
+      0.3,
+      0.15
+    ],
+    [
+      0.2,
+      0.1
+    ],
+    [
+      0.2,
+      0.1
+    ]
+  ]
+}

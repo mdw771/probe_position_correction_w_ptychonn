@@ -4,7 +4,11 @@ import re
 import collections
 
 import numpy as np
+import sklearn.neighbors
 
+
+def get_scan_index_from_dir_name(dirname):
+    return int(re.findall(r'\d+', dirname)[-1])
 
 
 def get_true_position(scan_idx, psize_nm=8):
@@ -50,3 +54,19 @@ def calculate_absolute_pos_error(actual_pos, true_pos, return_stats=True):
         return rms_error, s
     else:
         return rms_error
+
+
+def calculate_rms_ppe_n(actual_pos, true_pos, n=8):
+    nn_engine = sklearn.neighbors.NearestNeighbors(n_neighbors=n + 1)
+    nn_engine.fit(true_pos)
+    nn_dist, nn_inds = nn_engine.kneighbors(true_pos)
+    nn_inds = nn_inds[:, 1:]
+    nn_inds_ext = nn_inds.reshape(-1)
+    actual_pos_neighbors = np.take(actual_pos, nn_inds_ext, axis=0)
+    actual_pos_rep = np.repeat(actual_pos, n, axis=0)
+    actual_offsets = actual_pos_neighbors - actual_pos_rep
+    true_pos_neighbors = np.take(true_pos, nn_inds_ext, axis=0)
+    true_pos_rep = np.repeat(true_pos, n, axis=0)
+    true_offsets = true_pos_neighbors - true_pos_rep
+    res = np.sqrt(np.mean(np.sum((actual_offsets - true_offsets) ** 2, axis=1)))
+    return res

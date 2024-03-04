@@ -158,36 +158,37 @@ if __name__ == '__main__':
     plt.rc('font', **fontProperties)
     plt.viridis()
 
-    use_baseline = True
+    mode = 'decimation'
 
-    # scan_indices = [233, 235, 234, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
-    # scan_indices = [233]
-    scan_indices = [234, 239, 240]
-    # decimate_ratios = [0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.02, 0.01]
-    decimate_ratios = [0.7]
+    # scan_indices = [233, 234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
+    scan_indices = [235]
+    #scan_indices = [234, 239, 240]
+    # decimate_ratios = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.02, 0.01]
+    decimate_ratios = [0.9]
 
-    for decimate_ratio in decimate_ratios:
+    if mode == 'decimation':
+        for decimate_ratio in decimate_ratios:
+            for scan_idx in scan_indices[rank::n_ranks]:
+                print('==========================')
+                print('Now running {}'.format(scan_idx))
+                print('==========================')
+                # run_pos_corr(scan_idx,
+                #              'outputs/pred_test{}_model_36SpiralDatasets_cleaned_valRatio_10/pred_phase.tiff'.format(scan_idx),
+                #              save_path='outputs'
+                #              )
+                run_pos_corr(scan_idx,
+                             'outputs/pred_test{}_model_phaseOnly_BN_36SpiralDatasets_meanSubStdData_dataDecimation_{}/pred_phase.tiff'.format(scan_idx, decimate_ratio),
+                             save_path='outputs/dataDecimation_{}'.format(decimate_ratio),
+                             use_baseline=True,
+                             config_file_postfix_to_use_if_any='decimation'
+                             )
+    else:
         for scan_idx in scan_indices[rank::n_ranks]:
             print('==========================')
             print('Now running {}'.format(scan_idx))
             print('==========================')
-            # run_pos_corr(scan_idx,
-            #              'outputs/pred_test{}_model_36SpiralDatasets_cleaned_valRatio_10/pred_phase.tiff'.format(scan_idx),
-            #              save_path='outputs'
-            #              )
             run_pos_corr(scan_idx,
-                         'outputs/pred_test{}_model_phaseOnly_BN_36SpiralDatasets_meanSubStdData_dataDecimation_{}/pred_phase.tiff'.format(scan_idx, decimate_ratio),
-                         save_path='outputs/dataDecimation_{}'.format(decimate_ratio),
-                         use_baseline=use_baseline,
-                         config_file_postfix_to_use_if_any='decimation'
+                         'outputs/pred_test{}_model_phaseOnly_BN_36SpiralDatasets_meanSubStdData_cleaned_valRatio_10/pred_phase.tiff'.format(scan_idx),
+                         save_path='outputs'
                          )
-
-#    for scan_idx in scan_indices[rank::n_ranks]:
-#        print('==========================')
-#        print('Now running {}'.format(scan_idx))
-#        print('==========================')
-#        run_pos_corr(scan_idx,
-#                     'outputs/pred_test{}_model_phaseOnly_BN_36SpiralDatasets_meanSubStdData_cleaned_valRatio_10/pred_phase.tiff'.format(scan_idx),
-#                     save_path='outputs'
-#                     )
 

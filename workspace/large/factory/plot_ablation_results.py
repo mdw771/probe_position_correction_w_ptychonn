@@ -2,12 +2,15 @@ import glob
 import os.path
 import re
 import collections
+import sys
+sys.path.insert(0, '/data/programs/probe_position_correction_w_ptychonn/tools/utils')
 
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
 import scipy.ndimage as ndi
 import tifffile
+from analysis_util import *
 
 
 matplotlib.rcParams['pdf.fonttype'] = 'truetype'
@@ -15,34 +18,7 @@ fontProperties = {'family': 'serif', 'serif': ['Times New Roman'], 'weight': 'no
 plt.rc('font', **fontProperties)
 
 
-def get_true_position(scan_idx, psize_nm=8):
-    probe_pos_list_true = np.genfromtxt('../data/pos{}.csv'.format(scan_idx), delimiter=',').astype('float32')
-    probe_pos_list_true /= (psize_nm * 1e-9)
-    return probe_pos_list_true
-
-
-def get_baseline_position(scan_idx, psize_nm=8):
-    scaling_dict = collections.defaultdict(lambda: 1.0,
-                                           {236: 0.5, 239: 0.5, 240: 0.25, 241: 0.25, 242: 0.25, 250: 0.5, 251: 0.5,
-                                            252: 0.25, 253: 0.25})
-    s = scaling_dict[scan_idx]
-    probe_pos_list_baseline = np.genfromtxt('../data/pos221.csv', delimiter=',').astype('float32') / (psize_nm * 1e-9) * s  # Baseline
-    return probe_pos_list_baseline
-
-
-def get_actual_position(folder, name_pattern=None, psize_nm=8):
-    if name_pattern is None:
-        name_pattern = 'calc_pos_*_collective_niters_2_beta_0p5_nn_12_sw_1e-2_1e-3.csv'
-    fname = glob.glob(os.path.join(folder, name_pattern))[0]
-    probe_pos_list = np.genfromtxt(fname, delimiter=',').astype('float32')
-    probe_pos_list /= (psize_nm * 1e-9)
-    return probe_pos_list
-
-
-def calculate_position_grad_error(actual_pos, true_pos):
-    actual_grad = actual_pos[1:] - actual_pos[:-1]
-    true_grad = true_pos[1:] - true_pos[:-1]
-    return np.sqrt(np.mean(np.sum((actual_grad - true_grad) ** 2, axis=1)))
+metric_func = calculate_rms_ppe_n  
 
 
 data_dir = '../outputs'
@@ -55,14 +31,20 @@ baseline_accum_refined_ppe_list = []
 baseline_accum_ppe_list = []
 baseline_indept_refined_ppe_list = []
 baseline_indept_ppe_list = []
+baseline_refined_rms_list = []
+baseline_rms_list = []
+baseline_accum_refined_rms_list = []
+baseline_accum_rms_list = []
+baseline_indept_refined_rms_list = []
+baseline_indept_rms_list = []
 for dset_folder in dset_list:
     try:
         scan_idx = int(re.findall('\d+', dset_folder)[-1])
         pos_baseline = get_baseline_position(scan_idx)
         pos_baseline_refined = get_actual_position(dset_folder, name_pattern='refined_baseline*')
         pos_true = get_true_position(scan_idx)
-        baseline_ppe = calculate_position_grad_error(pos_baseline, pos_true)
-        baseline_refined_ppe = calculate_position_grad_error(pos_baseline_refined, pos_true)
+        baseline_ppe = metric_func(pos_baseline, pos_true)
+        baseline_refined_ppe = metric_func(pos_baseline_refined, pos_true)
         baseline_ppe_list.append(baseline_ppe)
         baseline_refined_ppe_list.append(baseline_refined_ppe)
         if scan_idx >= 244:
@@ -101,7 +83,7 @@ for folder in folder_list:
             scan_idx = int(re.findall('\d+', dset_folder)[-1])
             pos_actual = get_actual_position(dset_folder)
             pos_true = get_true_position(scan_idx)
-            ppe = calculate_position_grad_error(pos_actual, pos_true)
+            ppe = metric_func(pos_actual, pos_true)
             ppe_list.append(ppe)
             if scan_idx >= 244:
                 indept_ppe_list.append(ppe)
@@ -117,29 +99,39 @@ for folder in folder_list:
     except:
         print('Cannot get positions for {}.'.format(scan_idx))
 
-decimation_ratios = decimation_ratios[3:]
-total_ppe_list = total_ppe_list[3:]
-total_accum_ppe_list = total_accum_ppe_list[3:]
-total_indept_ppe_list = total_indept_ppe_list[3:]
+decimation_ratios = decimation_ratios[2:]
+total_ppe_list = total_ppe_list[2:]
+total_accum_ppe_list = total_accum_ppe_list[2:]
+total_indept_ppe_list = total_indept_ppe_list[2:]
 
-plt.plot(decimation_ratios, total_ppe_list, label='All')
-plt.plot(decimation_ratios, total_accum_ppe_list, label='Accumulating')
-plt.plot(decimation_ratios, total_indept_ppe_list, label='Independent')
-plt.hlines(baseline_refined_ppe, 0, 1, color=plt.rcParams['axes.prop_cycle'].by_key()['color'][0], linestyles='dashdot')
-plt.hlines(baseline_ppe, 0, 1, color=plt.rcParams['axes.prop_cycle'].by_key()['color'][0], linestyles='--')
-plt.hlines(baseline_accum_refined_ppe, 0, 1, color=plt.rcParams['axes.prop_cycle'].by_key()['color'][1], linestyles='dashdot')
-plt.hlines(baseline_accum_ppe, 0, 1, color=plt.rcParams['axes.prop_cycle'].by_key()['color'][1], linestyles='--')
-plt.hlines(baseline_indept_refined_ppe, 0, 1, color=plt.rcParams['axes.prop_cycle'].by_key()['color'][2], linestyles='dashdot')
-plt.hlines(baseline_indept_ppe, 0, 1, color=plt.rcParams['axes.prop_cycle'].by_key()['color'][2], linestyles='--')
-plt.text(0.35, baseline_refined_ppe - 0.3, s='Nominal positions after refinement', color='gray', fontsize='small')
-plt.text(0.35, baseline_ppe - 0.3, s='Nominal positions before refinement', color='gray', fontsize='small')
-plt.text(0.35, baseline_accum_refined_ppe - 0.3, s='Nominal positions after refinement (accumulating)', color='gray', fontsize='small')
-plt.text(0.35, baseline_accum_ppe - 0.3, s='Nominal positions before refinement (accumulating)', color='gray', fontsize='small')
-plt.text(0.35, baseline_indept_refined_ppe - 0.3, s='Nominal positions after refinement (independent)', color='gray', fontsize='small')
-plt.text(0.35, baseline_indept_ppe - 0.3, s='Nominal positions before refinement (independent)', color='gray', fontsize='small')
-plt.legend()
-plt.xlim(0.08, 0.92)
-plt.xticks(np.arange(0.1, 0.91, 0.1))
-plt.xlabel('Decimation ratio')
-plt.ylabel('Averaged RMS of pairwise position error (pixel)')
+fig, ax = plt.subplots(1, 3, figsize=(15, 5))
+ax[0].plot(decimation_ratios, total_ppe_list, label='All')
+ax[1].plot(decimation_ratios, total_accum_ppe_list, label='Accumulating')
+ax[2].plot(decimation_ratios, total_indept_ppe_list, label='Independent')
+ax[0].hlines(baseline_refined_ppe, 0, 1, color=plt.rcParams['axes.prop_cycle'].by_key()['color'][0], linestyles='dashdot')
+ax[0].hlines(baseline_ppe, 0, 1, color=plt.rcParams['axes.prop_cycle'].by_key()['color'][0], linestyles='--')
+ax[1].hlines(baseline_accum_refined_ppe, 0, 1, color=plt.rcParams['axes.prop_cycle'].by_key()['color'][1], linestyles='dashdot')
+ax[1].hlines(baseline_accum_ppe, 0, 1, color=plt.rcParams['axes.prop_cycle'].by_key()['color'][1], linestyles='--')
+ax[2].hlines(baseline_indept_refined_ppe, 0, 1, color=plt.rcParams['axes.prop_cycle'].by_key()['color'][2], linestyles='dashdot')
+ax[2].hlines(baseline_indept_ppe, 0, 1, color=plt.rcParams['axes.prop_cycle'].by_key()['color'][2], linestyles='--')
+ax[0].set_title('All')
+ax[1].set_title('Accumulating errors')
+ax[2].set_title('Independent errors')
+for a in ax:
+    a.grid(True)
+baseline_hline_pos = [[baseline_refined_ppe, baseline_ppe], [baseline_accum_refined_ppe, baseline_accum_ppe], [baseline_indept_refined_ppe, baseline_indept_ppe]]
+baseline_hline_labels = [['Nominal positions after refinement', 'Nominal positions before refinement'],
+                         ['Nominal positions after refinement (accumulating)', 'Nominal positions before refinement (accumulating)'],
+                         ['Nominal positions after refinement (independent)', 'Nominal positions before refinement (independent)']]
+for i, a in enumerate(ax):
+    #a.legend()
+    text_margin = (a.get_ylim()[1] - a.get_ylim()[0]) * 0.03
+    a.text(0.25, baseline_hline_pos[i][0] - text_margin, s=baseline_hline_labels[i][0], color='gray', fontsize='small')
+    a.text(0.25, baseline_hline_pos[i][1] - text_margin, s=baseline_hline_labels[i][1], color='gray', fontsize='small')
+    a.set_xlim(0, 0.92)
+    a.set_xticks(np.arange(0.0, 0.91, 0.1))
+    a.set_xlabel('Decimation ratio')
+    a.set_ylabel('Averaged RMS-PPE (pixel)')
+plt.tight_layout()
+#plt.show()
 plt.savefig('ablation_test.pdf')
