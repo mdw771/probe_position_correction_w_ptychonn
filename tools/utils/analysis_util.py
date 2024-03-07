@@ -56,7 +56,7 @@ def calculate_absolute_pos_error(actual_pos, true_pos, return_stats=True):
         return rms_error
 
 
-def calculate_rms_ppe_n(actual_pos, true_pos, n=8):
+def calculate_rms_ppe_n(actual_pos, true_pos, n=3):
     nn_engine = sklearn.neighbors.NearestNeighbors(n_neighbors=n + 1)
     nn_engine.fit(true_pos)
     nn_dist, nn_inds = nn_engine.kneighbors(true_pos)

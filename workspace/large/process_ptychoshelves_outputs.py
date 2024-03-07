@@ -8,9 +8,12 @@ import matplotlib.pyplot as plt
 import matplotlib
 import h5py
 
-matplotlib.rc('font',family='Times New Roman')
-matplotlib.rcParams['font.size'] = 14
+
+matplotlib.rcParams['pdf.fonttype'] = 'truetype'
+fontProperties = {'family': 'serif', 'serif': ['Times New Roman'], 'weight': 'normal', 'size': 12}
+plt.rc('font', **fontProperties)
 plt.viridis()
+
 
 def parse_ptychoshelves_output(fname):
     res = {}
@@ -47,7 +50,9 @@ for ps_folder in ps_output_dir_list:
     if not os.path.exists(dest_folder):
         os.makedirs(dest_folder)
 
-    plt.figure()
-    plt.imshow(np.angle(obj), vmin=-1, vmax=1)
-    plt.savefig(os.path.join(dest_folder, 'recon_{}.pdf'.format(case_type)))
+    fig, ax = plt.subplots(1, 1)
+    ax.imshow(np.angle(obj), vmin=-1, vmax=1)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    plt.savefig(os.path.join(dest_folder, 'recon_{}.pdf'.format(case_type)), transparent=True)
     plt.close()
