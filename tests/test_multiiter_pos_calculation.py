@@ -17,15 +17,19 @@ def test_multiiter_pos_calculation():
     scan_idx = 235
     recons = tifffile.imread(os.path.join('data', 'pred_test{}'.format(scan_idx), 'pred_phase.tiff'))
 
-    config_dict = InferenceConfigDict()
-    config_dict['dp_data_file_handle'] = VirtualDataFileHandle('', dp_shape=recons.shape[1:], num_dps=recons.shape[0])
-    config_dict['ptycho_reconstructor'] = VirtualReconstructor(InferenceConfigDict())
-    config_dict['ptycho_reconstructor'].set_object_image_array(recons)
-    config_dict['random_seed'] = 196
-    config_dict['debug'] = False
-    config_dict['probe_position_list'] = None
-    config_dict['central_crop'] = None
+    virtual_reconstructor = VirtualReconstructor(InferenceConfigDict())
+    virtual_reconstructor.set_object_image_array(recons)
+
+    config_dict = InferenceConfigDict(
+        dp_data_file_handle=VirtualDataFileHandle('', dp_shape=recons.shape[1:], num_dps=recons.shape[0]),
+        ptycho_reconstructor=virtual_reconstructor,
+        random_seed=196,
+        debug=False,
+        probe_position_list=None,
+        central_crop=None
+    )
     config_dict.load_from_json(os.path.join('data', 'config_{}.json'.format(scan_idx)))
+    print(config_dict)
 
     corrector_chain = ProbePositionCorrectorChain(config_dict)
     corrector_chain.verbose = False

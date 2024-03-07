@@ -30,7 +30,7 @@ class Reconstructor:
         self.device = None
 
     def build(self):
-        if self.config_dict['cpu_only'] or (not torch.cuda.is_available()):
+        if self.config_dict.cpu_only or (not torch.cuda.is_available()):
             self.device = torch.device('cpu')
         else:
             self.device = torch.device('cuda')
@@ -68,14 +68,14 @@ class PyTorchReconstructor(Reconstructor):
         self.build_model()
 
     def build_model(self):
-        if self.config_dict['model'] is None:
+        if self.config_dict.model is None:
             self.model = PtychoNNModel()
         else:
-            self.model = self.config_dict['model'][0](**self.config_dict['model'][1])
+            self.model = self.config_dict.model[0](**self.config_dict.model[1])
         try:
-            self.model.load_state_dict(torch.load(self.config_dict['model_path']))
+            self.model.load_state_dict(torch.load(self.config_dict.model_path))
             self.model.eval()
-            if not self.config_dict['cpu_only']:
+            if not self.config_dict.cpu_only:
                 self.model = self.model.cuda()
         except:
             warnings.warn('I was unable to locate the model. If this is desired (e.g., you want to override the '
@@ -129,7 +129,7 @@ class ONNXTensorRTReconstructor(Reconstructor):
     def build(self):
         import pycuda.autoinit
         self.context = pycuda.autoinit.context
-        self.onnx_mdl = self.config_dict['onnx_mdl']
+        self.onnx_mdl = self.config_dict.onnx_mdl
         self.trt_engine = engine_build_from_onnx(self.onnx_mdl)
         self.trt_hin, self.trt_hout, self.trt_din, self.trt_dout, self.trt_stream = mem_allocation(self.trt_engine)
         self.trt_context = self.trt_engine.create_execution_context()
@@ -156,11 +156,11 @@ class DatasetInferencer:
     def __init__(self, inference_dict: InferenceConfigDict):
         self.config_dict = inference_dict
         self.dp_data_file_handle = None
-        self.inference_batch_size = self.config_dict['batch_size']
+        self.inference_batch_size = self.config_dict.batch_size
         self.reconstructor = None
 
     def build(self):
-        self.dp_data_file_handle = self.config_dict['dp_data_file_handle']
+        self.dp_data_file_handle = self.config_dict.dp_data_file_handle
         self.reconstructor = PyTorchReconstructor(self.config_dict)
         self.reconstructor.build()
 
@@ -182,24 +182,24 @@ class DatasetInferencer:
         pbar.close()
 
     def write_tiffs(self, arr, start_index=0, name_prefix='pred_phase'):
-        if not os.path.exists(self.config_dict['prediction_output_path']):
-            os.makedirs(self.config_dict['prediction_output_path'])
+        if not os.path.exists(self.config_dict.prediction_output_path):
+            os.makedirs(self.config_dict.prediction_output_path)
         if arr.ndim == 2:
-            tifffile.imwrite(os.path.join(self.config_dict['prediction_output_path'],
+            tifffile.imwrite(os.path.join(self.config_dict.prediction_output_path,
                                           '{}_{}.tiff'.format(name_prefix, start_index)),
                              arr)
         else:
             for i in range(arr.shape[0]):
                 ind = start_index + i
-                tifffile.imwrite(os.path.join(self.config_dict['prediction_output_path'],
+                tifffile.imwrite(os.path.join(self.config_dict.prediction_output_path,
                                               '{}_{}.tiff'.format(name_prefix, ind)),
                                  arr[i])
 
     def convert_output_files_into_single_tiff(self, prefix, delete_individual_files_after_complete=False):
-        images = read_all_images(self.config_dict['prediction_output_path'], prefix + '_')
-        tifffile.imwrite(os.path.join(self.config_dict['prediction_output_path'], '{}.tiff'.format(prefix)), images)
+        images = read_all_images(self.config_dict.prediction_output_path, prefix + '_')
+        tifffile.imwrite(os.path.join(self.config_dict.prediction_output_path, '{}.tiff'.format(prefix)), images)
         if delete_individual_files_after_complete:
-            flist_del = glob.glob(os.path.join(self.config_dict['prediction_output_path'], prefix + '_*'))
+            flist_del = glob.glob(os.path.join(self.config_dict.prediction_output_path, prefix + '_*'))
             for f in flist_del:
                 os.remove(f)
 
@@ -214,34 +214,34 @@ class TileStitcher:
         self.flip_lr = False
         self.flip_final_image = True
         self.name_prefix = 'pred_phase_'
-        self.downsampling = self.config_dict['stitching_downsampling']
+        self.downsampling = self.config_dict.stitching_downsampling
 
     def build(self):
         self.build_position_list()
         self.build_image_array()
 
     def build_position_list(self):
-        if self.config_dict['probe_position_list'] is not None:
-            self.position_list = self.config_dict['probe_position_list']
+        if self.config_dict.probe_position_list is not None:
+            self.position_list = self.config_dict.probe_position_list
         else:
-            self.position_list = ProbePositionList(file_path=self.config_dict['probe_position_data_path'],
-                                                   unit=self.config_dict['probe_position_data_unit'],
-                                                   psize_nm=self.config_dict['pixel_size_nm'],
+            self.position_list = ProbePositionList(file_path=self.config_dict.probe_position_data_path,
+                                                   unit=self.config_dict.probe_position_data_unit,
+                                                   psize_nm=self.config_dict.pixel_size_nm,
                                                    convert_to_pixel=False)
 
     def build_image_array(self):
         combined_tiff_fname = self.name_prefix if self.name_prefix[-1] != '_' else self.name_prefix[:-1]
         combined_tiff_fname += '.tiff'
-        if os.path.exists(os.path.join(self.config_dict['prediction_output_path'], combined_tiff_fname)):
-            self.config_dict['prediction_output_path'] = (
-                os.path.join(self.config_dict['prediction_output_path'], combined_tiff_fname))
-        if len(self.config_dict['prediction_output_path']) > 5 and \
-                self.config_dict['prediction_output_path'][-5:] == '.tiff':
-            self.images = tifffile.imread(self.config_dict['prediction_output_path'])
+        if os.path.exists(os.path.join(self.config_dict.prediction_output_path, combined_tiff_fname)):
+            self.config_dict.prediction_output_path = (
+                os.path.join(self.config_dict.prediction_output_path, combined_tiff_fname))
+        if len(self.config_dict.prediction_output_path) > 5 and \
+                self.config_dict.prediction_output_path[-5:] == '.tiff':
+            self.images = tifffile.imread(self.config_dict.prediction_output_path)
         else:
-            self.images = read_all_images(self.config_dict['prediction_output_path'], self.name_prefix)
-        if self.config_dict['central_crop'] is not None:
-            self.images = crop_center(self.images, self.config_dict['central_crop'])
+            self.images = read_all_images(self.config_dict.prediction_output_path, self.name_prefix)
+        if self.config_dict.central_crop is not None:
+            self.images = crop_center(self.images, self.config_dict.central_crop)
         self.images = self.images[:, ::self.downsampling, ::self.downsampling]
 
     def run(self):

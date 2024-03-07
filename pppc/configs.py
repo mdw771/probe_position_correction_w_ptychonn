@@ -75,10 +75,24 @@ class InferenceConfigDict(ConfigDict):
     `model_path`. The provided model class and arguments must match the model being loaded.
     """
 
+    ptycho_reconstructor: Any = None
+    """
+    Should be either None or a Reconstructor object. If None, PyTorchReconstructor is used by default.
+    """
+
+    dp_data_path: Any = None
+    """
+    The path to the diffraction data file. When using a VirtualReconstrutor that uses already-reconstructed images, 
+    keep this as None.
+    """
+
     prediction_output_path: Any = None
     """Path to save PtychoNN prediction results."""
 
     cpu_only: Any = False
+
+    onnx_mdl: Any = None
+    """ONNX file when using ONNXReconstructor."""
 
     # ===== Image registration configs =====
     registration_method: Any = 'error_map'
@@ -117,9 +131,13 @@ class InferenceConfigDict(ConfigDict):
     """
 
     min_roi_stddev: Any = 0.2
+
     subpixel_fitting_window_size: Any = 5
+
     subpixel_diff_tolerance: Any = 2
+
     subpixel_fitting_check_coefficients: Any = True
+
     errormap_error_check_tol: Any = 0.3
 
     # ===== General configs =====

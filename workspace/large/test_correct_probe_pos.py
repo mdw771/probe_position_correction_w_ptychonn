@@ -50,31 +50,30 @@ def run_pos_corr(scan_idx, image_path, save_path='outputs', use_baseline=False, 
     probe_pos_list_baseline = np.genfromtxt('data/pos221.csv', delimiter=',').astype('float32') / (psize_nm * 1e-9) * s  # Baseline
 
     try:
-        #recons = tifffile.imread('outputs/pred_test{}_model_36SpiralDatasets_model_PtychoNNModel_nLevels_4_batchSizePerProcess_32_learningRatePerProcess_0.0001/pred_phase.tiff'.format(scan_idx))
         recons = tifffile.imread(image_path)
     except:
         print('Reading images from scan### folder.')
         recons = tifffile.imread('outputs/pred_scan{}_model_36SpiralDatasets_model_PtychoNNModel_nLevels_4_batchSizePerProcess_32_learningRatePerProcess_0.0001/pred_phase.tiff'.format(scan_idx))
-    #recons = tifffile.imread('data/scan{}_phase.tiff'.format(scan_idx))
-    config_dict = InferenceConfigDict()
-    # config_dict['model_path'] = '../../trained_models/model_36SpiralDatasets_model_PtychoNNModel_nLevels_4_batchSizePerProcess_32_learningRatePerProcess_0.0001/best_model.pth'
-    config_dict['model_path'] = '../../trained_models/model_36SpiralDatasets_cleaned/best_model.pth'
-    config_dict['model'] = (PtychoNNModel, {'n_levels': 4})
-    # config_dict['dp_data_file_handle'] = NPZFileHandle('data/test{}.npz'.format(scan_idx))
-    config_dict['dp_data_file_handle'] = VirtualDataFileHandle('', dp_shape=recons.shape[1:], num_dps=recons.shape[0])
-    # config_dict['dp_data_file_handle'].transform_data((128, 128), discard_len=(64, 64))
-    config_dict['ptycho_reconstructor'] = VirtualReconstructor(InferenceConfigDict())
-    config_dict['ptycho_reconstructor'].set_object_image_array(recons)
-    config_dict['random_seed'] = 196 
-    config_dict['debug'] = False
-    config_dict['central_crop'] = None
+
+    reconstructor = VirtualReconstructor(InferenceConfigDict())
+    reconstructor.set_object_image_array(recons)
+
+    config_dict = InferenceConfigDict(
+        model_path='../../trained_models/model_36SpiralDatasets_cleaned/best_model.pth',
+        model=(PtychoNNModel, {'n_levels': 4}),
+        ptycho_reconstructor=reconstructor,
+        dp_data_file_handle=VirtualDataFileHandle('', dp_shape=recons.shape[1:], num_dps=recons.shape[0]),
+        random_seed=196,
+        debug=False,
+        central_crop=None,
+    )
 
     if use_baseline:
-        config_dict['probe_position_list'] = ProbePositionList(position_list=probe_pos_list_baseline)
-        config_dict['baseline_position_list'] = None
+        config_dict.probe_position_list = ProbePositionList(position_list=probe_pos_list_baseline)
+        config_dict.baseline_position_list = None
     else:
-        config_dict['probe_position_list'] = None if scan_idx != 247 else ProbePositionList(position_list=probe_pos_list_baseline)
-        config_dict['baseline_position_list'] = ProbePositionList(position_list=probe_pos_list_baseline)
+        config_dict.probe_position_list = None if scan_idx != 247 else ProbePositionList(position_list=probe_pos_list_baseline),
+        config_dict.baseline_position_list = ProbePositionList(position_list=probe_pos_list_baseline),
 
     # Load config
     config_fname = os.path.join('config_jsons', 'config_{}.json'.format(scan_idx))
