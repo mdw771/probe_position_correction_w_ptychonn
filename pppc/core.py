@@ -105,17 +105,17 @@ class PtychoNNProbePositionCorrector:
 
     def __init__(self, config_dict: InferenceConfigDict):
         self.config_dict = config_dict
-        if self.config_dict['ptycho_reconstructor'] is None:
+        if self.config_dict.ptycho_reconstructor is None:
             self.ptycho_reconstructor = PyTorchReconstructor(self.config_dict)
         else:
-            self.ptycho_reconstructor = self.config_dict['ptycho_reconstructor']
+            self.ptycho_reconstructor = self.config_dict.ptycho_reconstructor
         self.dp_data_fhdl = None
         self.orig_probe_positions = None
         self.new_probe_positions = None
         self.n_dps = 0
-        self.debug = self.config_dict['debug']
+        self.debug = self.config_dict.debug
         self.registrator = None
-        self.method = self.config_dict['method']
+        self.method = self.config_dict.method
         self.lmbda_collective = 1e-6
         self.a_mat = np.array([])
         self.b_vec = np.array([])
@@ -125,52 +125,50 @@ class PtychoNNProbePositionCorrector:
 
     def get_registrator_arguments_from_config_dict(self):
         kwargs = {
-            'method': self.config_dict['registration_method'],
-            'max_shift': self.config_dict['max_shift'],
-            'random_seed': self.config_dict['random_seed'],
-            'subpixel': self.config_dict['do_subpixel'],
-            'outlier_removal_method': self.config_dict['sift_outlier_removal_method'],
-            'boundary_exclusion_length': self.config_dict['sift_border_exclusion_length'],
-            'downsample': self.config_dict['registration_downsample'],
-            'algs': self.config_dict['hybrid_registration_algs'],
-            'tols': self.config_dict['hybrid_registration_tols'],
-            'tol': self.config_dict['nonhybrid_registration_tol'],
-            'min_roi_stddev': self.config_dict['min_roi_stddev'],
-            'use_baseline_offsets_for_uncertain_pairs': self.config_dict[
-                'use_baseline_offsets_for_uncertain_pairs'
-            ],
-            'subpixel_fit_window_size': self.config_dict['subpixel_fitting_window_size'],
-            'subpixel_diff_tolerance': self.config_dict['subpixel_diff_tolerance'],
-            'use_fast_errormap': self.config_dict['use_fast_errormap'],
-            'subpixel_fitting_check_coefficients': self.config_dict['subpixel_fitting_check_coefficients'],
-            'errormap_error_check_tol': self.config_dict['errormap_error_check_tol']
+            'method': self.config_dict.registration_method,
+            'max_shift': self.config_dict.max_shift,
+            'random_seed': self.config_dict.random_seed,
+            'subpixel': self.config_dict.do_subpixel,
+            'outlier_removal_method': self.config_dict.sift_outlier_removal_method,
+            'boundary_exclusion_length': self.config_dict.sift_border_exclusion_length,
+            'downsample': self.config_dict.registration_downsample,
+            'algs': self.config_dict.hybrid_registration_algs,
+            'tols': self.config_dict.hybrid_registration_tols,
+            'tol': self.config_dict.nonhybrid_registration_tol,
+            'min_roi_stddev': self.config_dict.min_roi_stddev,
+            'use_baseline_offsets_for_uncertain_pairs': self.config_dict.use_baseline_offsets_for_uncertain_pairs,
+            'subpixel_fit_window_size': self.config_dict.subpixel_fitting_window_size,
+            'subpixel_diff_tolerance': self.config_dict.subpixel_diff_tolerance,
+            'use_fast_errormap': self.config_dict.use_fast_errormap,
+            'subpixel_fitting_check_coefficients': self.config_dict.subpixel_fitting_check_coefficients,
+            'errormap_error_check_tol': self.config_dict.errormap_error_check_tol
         }
         return kwargs
 
     def build(self):
-        if self.config_dict['random_seed'] is not None:
-            logger.info('Random seed is set to {}.'.format(self.config_dict['random_seed']))
-            np.random.seed(self.config_dict['random_seed'])
+        if self.config_dict.random_seed is not None:
+            logger.info('Random seed is set to {}.'.format(self.config_dict.random_seed))
+            np.random.seed(self.config_dict.random_seed)
         self.ptycho_reconstructor.build()
-        if not self.config_dict['dp_data_file_handle']:
-            self.dp_data_fhdl = create_data_file_handle(self.config_dict['dp_data_path'])
+        if not self.config_dict.dp_data_file_handle:
+            self.dp_data_fhdl = create_data_file_handle(self.config_dict.dp_data_path)
         else:
-            self.dp_data_fhdl = self.config_dict['dp_data_file_handle']
+            self.dp_data_fhdl = self.config_dict.dp_data_file_handle
         self.n_dps = self.dp_data_fhdl.num_dps
 
         self.orig_probe_positions = ProbePositionList(position_list=np.zeros([self.n_dps, 2]))
-        if not self.config_dict['probe_position_list']:
-            if self.config_dict['probe_position_data_path']:
-                self.orig_probe_positions = ProbePositionList(file_path=self.config_dict['probe_position_data_path'],
-                                                              unit=self.config_dict['probe_position_data_unit'],
-                                                              psize_nm=self.config_dict['pixel_size_nm'])
+        if not self.config_dict.probe_position_list:
+            if self.config_dict.probe_position_data_path:
+                self.orig_probe_positions = ProbePositionList(file_path=self.config_dict.probe_position_data_path,
+                                                              unit=self.config_dict.probe_position_data_unit,
+                                                              psize_nm=self.config_dict.pixel_size_nm)
         else:
-            self.orig_probe_positions = self.config_dict['probe_position_list']
+            self.orig_probe_positions = self.config_dict.probe_position_list
         self.new_probe_positions = self.orig_probe_positions.copy_with_zeros()
 
         self.registrator = Registrator(**self.get_registrator_arguments_from_config_dict())
 
-        if self.config_dict['rectangular_grid'] and self.config_dict['use_baseline_offsets_for_points_on_same_row']:
+        if self.config_dict.rectangular_grid and self.config_dict.use_baseline_offsets_for_points_on_same_row:
             self.build_row_index_list()
 
     def build_row_index_list(self):
@@ -217,9 +215,9 @@ class PtychoNNProbePositionCorrector:
         return obj_amp, obj_ph
 
     def crop_center(self, image_list):
-        if self.config_dict['central_crop'] is None:
+        if self.config_dict.central_crop is None:
             return image_list
-        crop_shape = self.config_dict['central_crop']
+        crop_shape = self.config_dict.central_crop
         for i in range(len(image_list)):
             orig_shape = image_list[i].shape[1:]
             start_point = [(orig_shape[j] - crop_shape[j]) // 2 for j in range(2)]
@@ -233,13 +231,13 @@ class PtychoNNProbePositionCorrector:
         """
         Run serial mode probe position correction.
         """
-        offset_tracker = OffsetEstimator(beta=self.config_dict['offset_estimator_beta'],
-                                         order=self.config_dict['offset_estimator_order'])
+        offset_tracker = OffsetEstimator(beta=self.config_dict.offset_estimator_beta,
+                                         order=self.config_dict.offset_estimator_order)
         previous_obj = self.reconstruct_dp(0)[1][0]
         for ind in trange(1, self.n_dps):
             current_obj = self.reconstruct_dp(ind)[1][0]
             offset = self.registrator.run(previous_obj, current_obj)
-            if self.config_dict['use_baseline_offsets_for_uncertain_pairs'] and \
+            if self.config_dict.use_baseline_offsets_for_uncertain_pairs and \
                     self.registrator.get_status() == self.registrator.get_status_code('empty'):
                 offset = self.orig_probe_positions.array[ind] - self.orig_probe_positions.array[ind - 1]
             elif self.registrator.get_status() == self.registrator.get_status_code('bad'):
@@ -262,7 +260,7 @@ class PtychoNNProbePositionCorrector:
         Run collective probe position correction.
         """
         self.build_linear_system_for_collective_correction()
-        self.solve_linear_system(mode='residue', smooth_constraint_weight=self.config_dict['smooth_constraint_weight'])
+        self.solve_linear_system(mode='residue', smooth_constraint_weight=self.config_dict.smooth_constraint_weight)
         self.postprocess()
 
     def get_neightbor_inds(self, i_dp, knn_inds):
@@ -275,7 +273,7 @@ class PtychoNNProbePositionCorrector:
         else:
             this_neighbors_inds = [i_dp - 1, i_dp + 1]
         i_knn = 0
-        while len(this_neighbors_inds) < self.config_dict['num_neighbors_collective']:
+        while len(this_neighbors_inds) < self.config_dict.num_neighbors_collective:
             if knn_inds[i_knn] not in this_neighbors_inds:
                 this_neighbors_inds.append(knn_inds[i_knn])
             i_knn += 1
@@ -287,12 +285,12 @@ class PtychoNNProbePositionCorrector:
         # A hash table used to keep track of already registered DP pairs. One can then check whether a pair has been
         # registered with O(1) time.
         registered_pair_hash_table = collections.defaultdict(lambda: None)
-        nn_engine = sklearn.neighbors.NearestNeighbors(n_neighbors=self.config_dict['num_neighbors_collective'] + 1)
+        nn_engine = sklearn.neighbors.NearestNeighbors(n_neighbors=self.config_dict.num_neighbors_collective + 1)
         nn_engine.fit(self.orig_probe_positions.array)
         nn_dists, nn_inds = nn_engine.kneighbors(self.orig_probe_positions.array)
         for i_dp, this_orig_pos in enumerate(tqdm(self.orig_probe_positions.array)):
-            if self.config_dict['registration_tol_schedule']:
-                self.registrator.update_tol_by_tol_schedule(i_dp, self.config_dict['registration_tol_schedule'])
+            if self.config_dict.registration_tol_schedule:
+                self.registrator.update_tol_by_tol_schedule(i_dp, self.config_dict.registration_tol_schedule)
             this_knn_inds = nn_inds[i_dp, 1:]
             this_neighbors_inds = self.get_neightbor_inds(i_dp, this_knn_inds)
 
@@ -308,7 +306,7 @@ class PtychoNNProbePositionCorrector:
                 neighbor_obj = self.reconstruct_dp(dp=self.dp_data_fhdl.get_dp_by_raw_index(ind_neighbor),
                                                    ind=ind_neighbor)[1][0]
 
-                if self.config_dict['use_baseline_offsets_for_points_on_same_row'] \
+                if self.config_dict.use_baseline_offsets_for_points_on_same_row \
                         and self.row_index_list is not None \
                         and self.row_index_list[i_dp] == self.row_index_list[ind_neighbor]:
                     logger.info('DP {} and {} are on the same row, so using baseline offset for this pair.'.format(
@@ -328,7 +326,7 @@ class PtychoNNProbePositionCorrector:
                         plt.show()
                         plt.tight_layout()
                         print('Offset: {}'.format(offset))
-                if self.config_dict['use_baseline_offsets_for_uncertain_pairs'] and \
+                if self.config_dict.use_baseline_offsets_for_uncertain_pairs and \
                         self.registrator.get_status() == self.registrator.get_status_code('empty'):
                     offset = self.orig_probe_positions.array[i_dp] - self.orig_probe_positions.array[ind_neighbor]
                 # We want to be more strict with collective mode. If a result is less confident, just skip it.
@@ -340,7 +338,7 @@ class PtychoNNProbePositionCorrector:
                     self.a_mat.append(self._generate_amat_row(i_dp, ind_neighbor))
         self.a_mat = np.stack(self.a_mat)
         self.b_vec = np.stack(self.b_vec)
-        if self.config_dict['use_baseline_offsets_for_unregistered_points']:
+        if self.config_dict.use_baseline_offsets_for_unregistered_points:
             self.fill_gaps_in_linear_system()
 
     def fill_gaps_in_linear_system(self):
@@ -385,7 +383,7 @@ class PtychoNNProbePositionCorrector:
             self.new_probe_positions.array = np.linalg.pinv(a_mat) @ b_vec
 
     def postprocess(self):
-        if self.config_dict['use_baseline_offsets_for_unregistered_points']:
+        if self.config_dict.use_baseline_offsets_for_unregistered_points:
             for ind in self.unregistered_indices:
                 if ind > 0:
                     baseline_offset = self.orig_probe_positions.array[ind] - self.orig_probe_positions.array[ind - 1]
@@ -426,7 +424,7 @@ class ProbePositionCorrectorChain:
         self.corrector_list = []
         self.multiiter_keys = []
         self.n_iters = 1
-        self.baseline_pos_list = config_dict['baseline_position_list']
+        self.baseline_pos_list = config_dict.baseline_position_list
         self.collective_mode_offset_tol = 150
         self.verbose = True
         self.redone_with_baseline = False
@@ -436,9 +434,9 @@ class ProbePositionCorrectorChain:
 
     def build_multiiter_entries(self):
         has_multiiter_key = False
-        for key in self.config_dict.keys():
+        for key in self.config_dict.__dict__.keys():
             if 'multiiter' in key:
-                self.n_iters = len(self.config_dict[key])
+                self.n_iters = len(self.config_dict.__dict__[key])
                 self.multiiter_keys.append(key)
                 has_multiiter_key = True
         if not has_multiiter_key:
@@ -460,12 +458,12 @@ class ProbePositionCorrectorChain:
         if self.verbose:
             corrector.orig_probe_positions.plot()
         corrector.run()
-        if self.config_dict['method'] == 'collective' and (not self.is_collective_result_good(corrector)):
+        if self.config_dict.method == 'collective' and (not self.is_collective_result_good(corrector)):
             # Redo iteration using baseline as initialization if result is bad
             logger.info('The current iteration is using collective mode and the result is unreliable. Attempting to '
                         'redo this iteration with baseline positions as initialization...')
             if self.baseline_pos_list:
-                self.config_dict['probe_position_list'] = self.baseline_pos_list
+                self.config_dict.probe_position_list = self.baseline_pos_list
                 corrector = PtychoNNProbePositionCorrector(config_dict=self.config_dict)
                 corrector.build()
                 corrector.run()
@@ -489,7 +487,7 @@ class ProbePositionCorrectorChain:
     def update_config_dict(self, iter, initialize_with_baseline=False):
         for mikey in self.multiiter_keys:
             key = self.get_ordinary_key_name(mikey)
-            self.config_dict[key] = self.config_dict[mikey][iter]
+            self.config_dict.__dict__key = self.config_dict.__dict__[mikey][iter]
         if iter > 0:
             last_corrector = self.corrector_list[iter - 1]
             last_probe_pos_array = last_corrector.new_probe_positions.array
@@ -499,5 +497,5 @@ class ProbePositionCorrectorChain:
                     probe_pos_list = self.baseline_pos_list
                 else:
                     raise ValueError('Cannot initialize with baseline positions: baseline position list is None.')
-            self.config_dict['probe_position_list'] = probe_pos_list
+            self.config_dict.probe_position_list = probe_pos_list
             logger.info('Using result from the last iteration to initialize probe position array...')

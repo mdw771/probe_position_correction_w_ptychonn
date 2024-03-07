@@ -30,19 +30,19 @@ def subtract_mean_and_standardize_data(data):
 def test_ptychonn_predict(generate_gold=False):
     gold_dir = 'data_gold/test_ptychonn_predict'
 
-    config_dict = InferenceConfigDict()
-    config_dict['model_path'] = 'data/model_ptychonn_bn_meanSubStdData.pth'
-    config_dict['model'] = (PtychoNNPhaseOnlyModel, {'use_batchnorm': True})
-    config_dict['batch_size'] = 32
-    config_dict['dp_data_file_handle'] = NPZFileHandle('data/test235_truncated.npz')
-    # Correct int16 overflow values
-    config_dict['dp_data_file_handle'].array = clean_data(config_dict['dp_data_file_handle'].array)
-    config_dict['dp_data_file_handle'].transform_data((128, 128), discard_len=(64, 64))
-    config_dict['dp_data_file_handle'].array = subtract_mean_and_standardize_data(
-        config_dict['dp_data_file_handle'].array)
+    dataset = NPZFileHandle('data/test235_truncated.npz')
+    dataset.array = clean_data(dataset.array)
+    dataset.transform_data((128, 128), discard_len=(64, 64))
+    dataset.array = subtract_mean_and_standardize_data(dataset.array)
 
-    config_dict['cpu_only'] = True
-    config_dict['prediction_output_path'] = 'temp' if not generate_gold else gold_dir
+    config_dict = InferenceConfigDict(
+        model_path='data/model_ptychonn_bn_meanSubStdData.pth',
+        model=(PtychoNNPhaseOnlyModel, {'use_batchnorm': True}),
+        batch_size=32,
+        dp_data_file_handle=dataset,
+        cpu_only=True,
+        prediction_output_path='temp' if not generate_gold else gold_dir
+    )
 
     inferencer = DatasetInferencer(config_dict)
     inferencer.build()
