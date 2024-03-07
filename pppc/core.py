@@ -488,6 +488,8 @@ class ProbePositionCorrectorChain:
             else:
                 logger.info('Baseline position is unavailable.')
         self.corrector_list.append(corrector)
+        if self.verbose:
+            corrector.new_probe_positions.plot()
 
     def is_collective_result_good(self, corrector):
         calc_pos = corrector.new_probe_positions.array
@@ -504,7 +506,7 @@ class ProbePositionCorrectorChain:
     def update_config_dict(self, iter, initialize_with_baseline=False):
         for mikey in self.multiiter_keys:
             key = self.get_ordinary_key_name(mikey)
-            self.config_dict.__dict__key = self.config_dict.__dict__[mikey][iter]
+            self.config_dict.__dict__[key] = self.config_dict.__dict__[mikey][iter]
         if iter > 0:
             last_corrector = self.corrector_list[iter - 1]
             last_probe_pos_array = last_corrector.new_probe_positions.array
