@@ -13,7 +13,7 @@ import sklearn.neighbors
 import pppc
 from pppc.configs import InferenceConfigDict
 from pppc.reconstructor import PyTorchReconstructor, VirtualReconstructor
-from pppc.io import create_data_file_handle
+from pppc.io import create_data_file_handle, VirtualDataFileHandle
 from pppc.position_list import ProbePositionList
 from pppc.registrator import Registrator
 from pppc.util import class_timeit
@@ -105,10 +105,14 @@ class PtychoNNProbePositionCorrector:
 
     def __init__(self, config_dict: InferenceConfigDict):
         self.config_dict = config_dict
-        if self.config_dict.ptycho_reconstructor is None:
-            self.ptycho_reconstructor = PyTorchReconstructor(self.config_dict)
+        if self.config_dict.reconstruction_image_path is None:
+            if self.config_dict.ptycho_reconstructor is None:
+                self.ptycho_reconstructor = PyTorchReconstructor(self.config_dict)
+            else:
+                self.ptycho_reconstructor = self.config_dict.ptycho_reconstructor
         else:
-            self.ptycho_reconstructor = self.config_dict.ptycho_reconstructor
+            self.ptycho_reconstructor = VirtualReconstructor(InferenceConfigDict())
+
         self.dp_data_fhdl = None
         self.orig_probe_positions = None
         self.new_probe_positions = None
@@ -149,9 +153,22 @@ class PtychoNNProbePositionCorrector:
         if self.config_dict.random_seed is not None:
             logger.info('Random seed is set to {}.'.format(self.config_dict.random_seed))
             np.random.seed(self.config_dict.random_seed)
+
+        if self.config_dict.reconstruction_image_path is not None and \
+                isinstance(self.ptycho_reconstructor, VirtualReconstructor):
+            recons = tifffile.imread(self.config_dict.reconstruction_image_path)
+            self.ptycho_reconstructor.set_object_image_array(recons)
         self.ptycho_reconstructor.build()
+
         if not self.config_dict.dp_data_file_handle:
-            self.dp_data_fhdl = create_data_file_handle(self.config_dict.dp_data_path)
+            if isinstance(self.ptycho_reconstructor, VirtualReconstructor):
+                self.dp_data_fhdl = VirtualDataFileHandle(
+                    '',
+                    dp_shape=self.ptycho_reconstructor.object_image_array.shape[1:],
+                    num_dps=self.ptycho_reconstructor.object_image_array.shape[0]
+                )
+            else:
+                self.dp_data_fhdl = create_data_file_handle(self.config_dict.dp_data_path)
         else:
             self.dp_data_fhdl = self.config_dict.dp_data_file_handle
         self.n_dps = self.dp_data_fhdl.num_dps

@@ -63,6 +63,7 @@ class InferenceConfigDict(ConfigDict):
 
     # ===== PtychoNN configs =====
     batch_size: Any = 1
+    """Inference batch size."""
 
     model_path: Any = None
     """Path to a trained PtychoNN model."""
@@ -141,6 +142,14 @@ class InferenceConfigDict(ConfigDict):
     errormap_error_check_tol: Any = 0.3
 
     # ===== General configs =====
+    reconstruction_image_path: Any = None
+    """
+    Path to the reconstructed images to be used for position prediction. If None, PtychoNNProbePositionCorrector
+    would then require a Reconstructor object that generate reconstructed images from diffraction patterns. 
+    Alternatively, one could also keep this argument as None and pass a VirtualReconstructor set to read 
+    the reconstructed images to ptycho_reconstructor.
+    """
+
     dp_data_file_path: Any = None
 
     dp_data_file_handle: Any = None

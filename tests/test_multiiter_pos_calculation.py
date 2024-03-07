@@ -15,14 +15,9 @@ from pppc.util import class_timeit
 
 def test_multiiter_pos_calculation():
     scan_idx = 235
-    recons = tifffile.imread(os.path.join('data', 'pred_test{}'.format(scan_idx), 'pred_phase.tiff'))
-
-    virtual_reconstructor = VirtualReconstructor(InferenceConfigDict())
-    virtual_reconstructor.set_object_image_array(recons)
 
     config_dict = InferenceConfigDict(
-        dp_data_file_handle=VirtualDataFileHandle('', dp_shape=recons.shape[1:], num_dps=recons.shape[0]),
-        ptycho_reconstructor=virtual_reconstructor,
+        reconstruction_image_path=os.path.join('data', 'pred_test{}'.format(scan_idx), 'pred_phase.tiff'),
         random_seed=196,
         debug=False,
         probe_position_list=None,
