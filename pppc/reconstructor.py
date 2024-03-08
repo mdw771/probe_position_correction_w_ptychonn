@@ -4,6 +4,7 @@ import warnings
 import torch
 import tqdm
 from scipy import interpolate
+import numpy as np
 
 from pppc.helper import engine_build_from_onnx, mem_allocation, inference, crop_center
 from pppc.configs import InferenceConfigDict
