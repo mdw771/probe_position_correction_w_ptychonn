@@ -3,11 +3,9 @@ import glob
 
 import numpy as np
 import pandas as pd
-from skimage.transform import resize
 import tifffile
 import h5py
 
-from pppc.util import class_timeit
 from pppc.helper import transform_data_for_ptychonn
 
 class DataFileHandle:
