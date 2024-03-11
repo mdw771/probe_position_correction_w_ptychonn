@@ -54,10 +54,10 @@ class CodeMigrator:
     def copy_tester(self):
         fname_dict = {
             os.path.join(self.source_tester_dir, 'test_multiiter_pos_calculation.py'): None,
-            os.path.join(self.source_tester_dir, 'data', 'pred_test235', 'pred_phase.tiff'): None,
-            os.path.join(self.source_tester_dir, 'data', 'config_235.json'): None,
-            os.path.join(self.source_tester_dir, 'data', 'config_235.toml'): None,
-            os.path.join(self.source_tester_dir, 'data_gold', 'calc_pos_235_collective_niters_2_beta_0p5_nn_12_sw_1e-2_1e-3.csv'): None,
+            os.path.join(self.source_tester_dir, 'data', 'pred_test235', 'pred_phase.tiff'): os.path.join(self.dest_tester_dir, 'data', 'pospred', 'pred_test235', 'pred_phase.tiff'),
+            os.path.join(self.source_tester_dir, 'data', 'config_235.json'): os.path.join(self.dest_tester_dir, 'data', 'pospred', 'config_235.json'),
+            os.path.join(self.source_tester_dir, 'data', 'config_235.toml'): os.path.join(self.dest_tester_dir, 'data', 'pospred', 'config_235.toml'),
+            os.path.join(self.source_tester_dir, 'data_gold', 'calc_pos_235.csv'): os.path.join(self.dest_tester_dir, 'data_gold', 'pospred', 'calc_pos_235.csv'),
         }
         self.copy_and_rename_files(fname_dict, default_dest_dir=self.dest_tester_dir, root_source_dir=self.source_tester_dir)
 
@@ -128,6 +128,9 @@ class CodeMigrator:
             elif os.path.basename(fname) == 'core.py':
                 self.remove_unused_components_from_file(fname,
                                                         imported_classes_to_delete=['PyTorchReconstructor'])
+            elif os.path.basename(fname) == 'test_multiiter_pos_calculation.py':
+                self.replace_lines_with(fname, "os.path.join('data', '", "os.path.join('data', 'pospred', '")
+                self.replace_lines_with(fname, "os.path.join('data_gold',", "os.path.join('data_gold', 'pospred', ")
             self.add_blank_lines_before_class_definition(fname)
 
     def remove_unused_components_from_file(self, fname, classes_to_delete=(), imported_classes_to_delete=(),
@@ -243,6 +246,18 @@ class CodeMigrator:
                     break
             if not delete_line:
                 new_lines.append(l)
+        f.close()
+        f = open(fname, 'w')
+        f.writelines(new_lines)
+        f.close()
+
+    def replace_lines_with(self, fname, original, replace):
+        f = open(fname, 'r')
+        lines = f.readlines()
+        new_lines = []
+        for l in lines:
+            l = l.replace(original, replace)
+            new_lines.append(l)
         f.close()
         f = open(fname, 'w')
         f.writelines(new_lines)
