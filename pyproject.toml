@@ -20,6 +20,8 @@ dependencies = [
     "matplotlib",
     "tqdm",
     "tifffile",
+    "json",
+    "tomllib",
     "jupyter",
     "ipywidgets",
     "torch",

@@ -56,6 +56,7 @@ class CodeMigrator:
             os.path.join(self.source_tester_dir, 'test_multiiter_pos_calculation.py'): None,
             os.path.join(self.source_tester_dir, 'data', 'pred_test235', 'pred_phase.tiff'): None,
             os.path.join(self.source_tester_dir, 'data', 'config_235.json'): None,
+            os.path.join(self.source_tester_dir, 'data', 'config_235.toml'): None,
             os.path.join(self.source_tester_dir, 'data_gold', 'calc_pos_235_collective_niters_2_beta_0p5_nn_12_sw_1e-2_1e-3.csv'): None,
         }
         self.copy_and_rename_files(fname_dict, default_dest_dir=self.dest_tester_dir, root_source_dir=self.source_tester_dir)
