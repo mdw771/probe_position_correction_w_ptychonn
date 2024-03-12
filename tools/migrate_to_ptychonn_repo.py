@@ -51,6 +51,36 @@ class CodeMigrator:
         }
         self.copy_and_rename_files(fname_dict, default_dest_dir=self.dest_code_dir, root_source_dir=self.source_code_dir)
 
+        self.touch(os.path.join(self.dest_code_dir, '__init__.py'))
+
+    def copy_doc(self):
+        f = open(os.path.join(self.dest_code_dir, '__init__.py'), 'r+')
+        f_orig = open(os.path.join(self.source_dir, 'readme.md'), 'r')
+        body = f_orig.read()
+        f.write('"""\n')
+        f.write(body)
+        f.write('"""\n')
+        f.close()
+        f_orig.close()
+
+    def create_init(self):
+        f = open(os.path.join(self.dest_code_dir, '__init__.py'), 'a')
+        f.write("""import ptychonn.pospred\n""")
+        f.close()
+
+    def touch(self, fname):
+        f = open(fname, 'w')
+        f.write('\n')
+        f.close()
+
+    def append_file_content_to(self, orig, new):
+        f_orig = open(orig, 'r')
+        f_new = open(new, 'r+')
+        body = f_orig.read()
+        f_new.write(body)
+        f_orig.close()
+        f_new.close()
+
     def copy_tester(self):
         fname_dict = {
             os.path.join(self.source_tester_dir, 'test_multiiter_pos_calculation.py'): None,
@@ -58,7 +88,6 @@ class CodeMigrator:
             os.path.join(self.source_tester_dir, 'data', 'config_235.json'): os.path.join(self.dest_tester_dir, 'data', 'pospred', 'config_235.json'),
             os.path.join(self.source_tester_dir, 'data', 'config_235.toml'): os.path.join(self.dest_tester_dir, 'data', 'pospred', 'config_235.toml'),
             os.path.join(self.source_tester_dir, 'data_gold', 'calc_pos_235.csv'): os.path.join(self.dest_tester_dir, 'data_gold', 'pospred', 'calc_pos_235.csv'),
-            os.path.join(self.source_dir, 'readme.md'): os.path.join(self.dest_tester_dir, 'pospred_readme.md'),
         }
         self.copy_and_rename_files(fname_dict, default_dest_dir=self.dest_tester_dir, root_source_dir=self.source_tester_dir)
 
@@ -96,7 +125,7 @@ class CodeMigrator:
                 # if 'import logging' in l:
                 #     continue
                 new_lines.append(l)
-            if not has_import_logging:
+            if not has_import_logging and os.path.basename(dest_f) in ['core.py', 'helper.py', 'registrator.py']:
                 new_lines = [u'import logging\n',] + new_lines
             # new_lines = [u'import logging\n', u'logging.getLogger(__name__).setLevel(logging.INFO)\n', u'\n'] + new_lines
             f.close()
@@ -328,6 +357,8 @@ class CodeMigrator:
     def run(self):
         self.build_dir()
         self.copy_code()
+        self.copy_doc()
+        self.create_init()
         self.copy_tester()
         self.change_import()
         self.remove_unused_components()
