@@ -1,11 +1,14 @@
 import os
-
+import logging
 import numpy as np
 
 import pppc
 from pppc.configs import InferenceConfigDict
 from pppc.core import ProbePositionCorrectorChain
 from pppc.position_list import ProbePositionList
+
+
+logging.basicConfig(format='[%(asctime)s] %(message)s', level=logging.INFO)
 
 
 def test_multiiter_pos_calculation():

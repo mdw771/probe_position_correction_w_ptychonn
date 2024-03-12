@@ -47,7 +47,7 @@ class CodeMigrator:
             os.path.join(self.source_code_dir, 'io.py'): None,
             os.path.join(self.source_code_dir, 'position_list.py'): None,
             os.path.join(self.source_code_dir, 'helper.py'): None,
-            os.path.join(self.source_code_dir, 'message_logger.py'): None,
+            # os.path.join(self.source_code_dir, 'message_logger.py'): None,
         }
         self.copy_and_rename_files(fname_dict, default_dest_dir=self.dest_code_dir, root_source_dir=self.source_code_dir)
 
@@ -87,12 +87,17 @@ class CodeMigrator:
             f = open(dest_f, 'r')
             lines = f.readlines()
             new_lines = []
+            has_import_logging = False
             for i, l in enumerate(lines):
+                if 'import logging' in l:
+                    has_import_logging = True
                 if 'logger.info' in l:
-                    l = l.replace('logger.info', 'logger.debug')
+                    l = l.replace('logger.info', 'logging.debug')
                 # if 'import logging' in l:
                 #     continue
                 new_lines.append(l)
+            if not has_import_logging:
+                new_lines = [u'import logging\n',] + new_lines
             # new_lines = [u'import logging\n', u'logging.getLogger(__name__).setLevel(logging.INFO)\n', u'\n'] + new_lines
             f.close()
             f = open(dest_f, 'w')
@@ -132,6 +137,7 @@ class CodeMigrator:
             elif os.path.basename(fname) == 'test_multiiter_pos_calculation.py':
                 self.replace_lines_with(fname, "os.path.join('data', '", "os.path.join('data', 'pospred', '")
                 self.replace_lines_with(fname, "os.path.join('data_gold',", "os.path.join('data_gold', 'pospred', ")
+            self.remove_lines_with(fname, ['import logger'])
             self.add_blank_lines_before_class_definition(fname)
 
     def remove_unused_components_from_file(self, fname, classes_to_delete=(), imported_classes_to_delete=(),
@@ -297,12 +303,14 @@ class CodeMigrator:
         for i, l in enumerate(lines):
             if 'class ' in l:
                 cnt = 0
-                for ii in range(i - 2, i):
+                for ii in range(i - 4, i):
                     if self.is_blank_line(lines[ii]):
                         cnt += 1
                 if cnt < 2:
                     for ii in range(2 - cnt):
                         new_lines.append('\n')
+                elif cnt > 2:
+                    new_lines = new_lines[:2 - cnt]
             new_lines.append(l)
         if not self.is_blank_line(new_lines[-1]):
             new_lines.append('\n')

@@ -12,6 +12,15 @@ except:
 @dataclasses.dataclass
 class ConfigDict:
 
+    def __str__(self, *args, **kwargs):
+        s = ''
+        for key in self.__dict__.keys():
+            s += '{}: {}\n'.format(key, self.__dict__[key])
+        return s
+
+    def __repr__(self):
+        return self.__str__()
+
     @staticmethod
     def is_jsonable(x):
         try:
