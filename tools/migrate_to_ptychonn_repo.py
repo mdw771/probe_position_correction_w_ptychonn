@@ -58,6 +58,7 @@ class CodeMigrator:
             os.path.join(self.source_tester_dir, 'data', 'config_235.json'): os.path.join(self.dest_tester_dir, 'data', 'pospred', 'config_235.json'),
             os.path.join(self.source_tester_dir, 'data', 'config_235.toml'): os.path.join(self.dest_tester_dir, 'data', 'pospred', 'config_235.toml'),
             os.path.join(self.source_tester_dir, 'data_gold', 'calc_pos_235.csv'): os.path.join(self.dest_tester_dir, 'data_gold', 'pospred', 'calc_pos_235.csv'),
+            os.path.join(self.source_dir, 'readme.md'): os.path.join(self.dest_tester_dir, 'pospred_readme.md'),
         }
         self.copy_and_rename_files(fname_dict, default_dest_dir=self.dest_tester_dir, root_source_dir=self.source_tester_dir)
 
@@ -89,10 +90,10 @@ class CodeMigrator:
             for i, l in enumerate(lines):
                 if 'logger.info' in l:
                     l = l.replace('logger.info', 'logger.debug')
-                if 'import logging' in l:
-                    continue
+                # if 'import logging' in l:
+                #     continue
                 new_lines.append(l)
-            new_lines = [u'import logging\n', u'logging.getLogger(__name__).setLevel(logging.INFO)\n', u'\n'] + new_lines
+            # new_lines = [u'import logging\n', u'logging.getLogger(__name__).setLevel(logging.INFO)\n', u'\n'] + new_lines
             f.close()
             f = open(dest_f, 'w')
             f.writelines(new_lines)
