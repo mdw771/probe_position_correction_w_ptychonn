@@ -1,5 +1,9 @@
 # Ptychography probe position prediction with PtychoNN
 
+> **NOTICE** This algorithm has become a part of 
+> [PtychoNN](https://github.com/mcherukara/PtychoNN/tree/package) and all future
+> developments will be released there. 
+
 A ptychography probe position prediction algorithm making use of PtychoNN [1], a single-shot phase
 retrieval network. 
 
@@ -76,6 +80,9 @@ Predicted positions can be obtained from `corrector_chain.corrector_list[-1].new
 with images already predicted by PtychoNN. The script demonstrates a case without any initial position
 input; however, if an initial position set is desired, one can provide that through the
 `position_list` key of the config object. See comments in the config object constructor inside the script.
+
+Additionally, a Jupyter notebook is available at `workspace/large/test_correct_probe_pos.ipynb` for
+demonstration. 
 
 **References**
 
