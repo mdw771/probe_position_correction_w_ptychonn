@@ -64,7 +64,7 @@ def run_pos_corr(scan_idx, image_path, save_path='outputs', use_baseline=False, 
         ptycho_reconstructor=reconstructor,
         dp_data_file_handle=VirtualDataFileHandle('', dp_shape=recons.shape[1:], num_dps=recons.shape[0]),
         random_seed=196,
-        debug=False,
+        debug=True,
         central_crop=None,
     )
 
@@ -87,10 +87,10 @@ def run_pos_corr(scan_idx, image_path, save_path='outputs', use_baseline=False, 
     if use_baseline:
         print('Skipping serial mode iteration because use_baseline is True.')
         time.sleep(3)
-        if 'method_multiiter' in config_dict.keys() and config_dict['method_multiiter'][0] == 'serial':
-            for key in config_dict.keys():
+        if 'method_multiiter' in config_dict.__dict__.keys() and config_dict.__dict__['method_multiiter'][0] == 'serial':
+            for key in config_dict.__dict__.keys():
                 if 'multiiter' in key:
-                    config_dict[key] = config_dict[key][1:]
+                    config_dict.__dict__[key] = config_dict.__dict__[key][1:]
 
     print(config_dict)
 
