@@ -64,7 +64,7 @@ def run_pos_corr(scan_idx, image_path, save_path='outputs', use_baseline=False, 
         ptycho_reconstructor=reconstructor,
         dp_data_file_handle=VirtualDataFileHandle('', dp_shape=recons.shape[1:], num_dps=recons.shape[0]),
         random_seed=196,
-        debug=True,
+        debug=False,
         central_crop=None,
     )
 
@@ -72,7 +72,7 @@ def run_pos_corr(scan_idx, image_path, save_path='outputs', use_baseline=False, 
         config_dict.probe_position_list = ProbePositionList(position_list=probe_pos_list_baseline)
         config_dict.baseline_position_list = None
     else:
-        config_dict.probe_position_list = None if scan_idx != 247 else ProbePositionList(position_list=probe_pos_list_baseline),
+        config_dict.probe_position_list = None if scan_idx != 247 else ProbePositionList(position_list=probe_pos_list_baseline)
         config_dict.baseline_position_list = ProbePositionList(position_list=probe_pos_list_baseline),
 
     # Load config
@@ -82,6 +82,7 @@ def run_pos_corr(scan_idx, image_path, save_path='outputs', use_baseline=False, 
         if os.path.exists(temp_fname):
             config_fname = temp_fname
     config_dict.load_from_json(config_fname)
+    
 
     # If using baseline as initial guess, skip serial mode iteration.
     if use_baseline:
@@ -105,6 +106,8 @@ def run_pos_corr(scan_idx, image_path, save_path='outputs', use_baseline=False, 
         fig.savefig(os.path.join(output_dir, 'path_plot_iter_0.pdf'.format(scan_idx)))
     else:
         plt.show()
+    if save_figs:
+        corrector_s.benchmarker.save_walltimes(os.path.join(output_dir, 'walltime_iter_0.json'))
 
     # corrector_chain.config_dict['sift_outlier_removal_method'] = 'trial_error'
     corrector_chain.run_correction_iteration(1)
@@ -114,6 +117,8 @@ def run_pos_corr(scan_idx, image_path, save_path='outputs', use_baseline=False, 
         fig.savefig(os.path.join(output_dir, 'path_plot_collective_iter_1_nn_12_sw_1e-2.pdf'.format(scan_idx)), format='pdf')
     else:
         plt.show()
+    if save_figs:
+        corrector_c1.benchmarker.save_walltimes(os.path.join(output_dir, 'walltime_iter_1.json'))
 
     if corrector_chain.n_iters > 2:
         corrector_chain.run_correction_iteration(2)
@@ -125,6 +130,8 @@ def run_pos_corr(scan_idx, image_path, save_path='outputs', use_baseline=False, 
         fig.savefig(os.path.join(output_dir, 'path_plot_collective_iter_2_nn_12_sw_1e-3_1e-2.pdf'.format(scan_idx)), format='pdf')
     else:
         plt.show()
+    if save_figs:
+        corrector_c2.benchmarker.save_walltimes(os.path.join(output_dir, 'walltime_iter_2.json'))
 
     with open(os.path.join(output_dir, 'redone_with_baseline.txt'.format(scan_idx)), 'w') as f:
         f.write(str(int(corrector_chain.redone_with_baseline)))
@@ -157,13 +164,13 @@ if __name__ == '__main__':
     plt.rc('font', **fontProperties)
     plt.viridis()
 
-    mode = 'decimation'
+    mode = 'test'
 
-    # scan_indices = [233, 234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
-    scan_indices = [235]
+    scan_indices = [233, 234, 235, 236, 239, 240, 241, 242, 244, 245, 246, 247, 250, 251, 252, 253]
+    # scan_indices = [235]
     #scan_indices = [234, 239, 240]
-    # decimate_ratios = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.02, 0.01]
-    decimate_ratios = [0.9]
+    decimate_ratios = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.02, 0.01]
+    # decimate_ratios = [0.9]
 
     if mode == 'decimation':
         for decimate_ratio in decimate_ratios:

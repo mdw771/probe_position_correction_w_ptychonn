@@ -5,11 +5,14 @@ sys.path.insert(0, '/data/programs/probe_position_correction_w_ptychonn/pppc')
 sys.path.insert(0, '/data/programs/probe_position_correction_w_ptychonn')
 sys.path.insert(0, '/data/programs/probe_position_correction_w_ptychonn/tools/utils')
 import os
+from functools import wraps
+import json
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import cupy
+import time
 import scipy.ndimage as ndi
 from skimage.transform import resize
 import pandas as pd
@@ -23,6 +26,35 @@ from analysis_util import *
 matplotlib.rc('font',family='Times New Roman')
 matplotlib.rcParams['font.size'] = 14
 plt.viridis()
+
+
+class Benchmarker:
+    def __init__(self):
+        self.walltime_dict = {}
+
+    @staticmethod
+    def measure_walltime(func):
+        """
+        Decorator to measure the walltime of a method and log it to the Benchmarker's walltime_dict.
+        """
+        @wraps(func)
+        def wrapper(obj, *args, **kwargs):
+            start_time = time.perf_counter()
+            result = func(obj, *args, **kwargs)
+            end_time = time.perf_counter()
+            walltime = end_time - start_time
+
+            obj.benchmarker.walltime_dict[func.__name__] = walltime
+
+            return result
+        return wrapper
+    
+    def print_walltimes(self):
+        print(self.walltime_dict)
+        
+    def save_walltimes(self, path):
+        with open(path, 'w') as f:
+            json.dump(self.walltime_dict, f)
 
 
 class TikeReconstruction:
@@ -53,6 +85,8 @@ class TikeReconstruction:
 
         self.pos_corr_str = ''
         self.output_type_name_mapping = {'calculated': 'calc', 'true': 'true', 'baseline': 'baseline'}
+        
+        self.benchmarker = Benchmarker()
 
 
     def build(self):
@@ -150,7 +184,7 @@ class TikeReconstruction:
     def build_strings(self):
         self.pos_corr_str = 'posCorr_1_clip_2' if self.do_pos_corr else 'posCorr_0'
 
-
+    @Benchmarker.measure_walltime
     def run(self):
         if self.record_intermediate_states:
             # recon_true = np.angle(np.load('outputs/test{}/rpie_posCorr_0_pos_true.npy'.format(scan_idx)))
@@ -185,6 +219,7 @@ class TikeReconstruction:
         self.plot_rms_ppe_n_history(n=8)
         # self.plot_reconstruction_error_history()
         self.save_refined_positions()
+        self.benchmarker.save_walltimes(os.path.join('outputs/test{}/walltimes_tike_{}.json'.format(self.scan_idx, self.pos_corr_str)))
 
     def plot_loss(self):
         fig = plt.figure()

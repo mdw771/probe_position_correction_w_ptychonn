@@ -1,10 +1,13 @@
 import collections
+import time
+from functools import wraps
 
 import numpy as np
 import tifffile
 from tqdm import trange, tqdm
 import matplotlib.pyplot as plt
 import sklearn.neighbors
+import json
 
 from pppc.configs import ConfigDict, InferenceConfigDict
 from pppc.reconstructor import PyTorchReconstructor, VirtualReconstructor
@@ -12,6 +15,35 @@ from pppc.io import create_data_file_handle, VirtualDataFileHandle
 from pppc.position_list import ProbePositionList
 from pppc.registrator import Registrator
 from pppc.message_logger import logger
+
+
+class Benchmarker:
+    def __init__(self):
+        self.walltime_dict = {}
+
+    @staticmethod
+    def measure_walltime(func):
+        """
+        Decorator to measure the walltime of a method and log it to the Benchmarker's walltime_dict.
+        """
+        @wraps(func)
+        def wrapper(obj, *args, **kwargs):
+            start_time = time.perf_counter()
+            result = func(obj, *args, **kwargs)
+            end_time = time.perf_counter()
+            walltime = end_time - start_time
+
+            obj.benchmarker.walltime_dict[func.__name__] = walltime
+
+            return result
+        return wrapper
+    
+    def print_walltimes(self):
+        print(self.walltime_dict)
+        
+    def save_walltimes(self, path):
+        with open(path, 'w') as f:
+            json.dump(self.walltime_dict, f)
 
 
 class OffsetEstimator:
@@ -118,6 +150,7 @@ class PtychoNNProbePositionCorrector:
         self.count_bad_offset = 0
         self.row_index_list = []
         self.unregistered_indices = []
+        self.benchmarker = Benchmarker()
 
     def build(self):
         if self.config_dict.random_seed is not None:
@@ -215,6 +248,7 @@ class PtychoNNProbePositionCorrector:
             image_list[i] = new_image
         return image_list
 
+    @Benchmarker.measure_walltime
     def run_probe_position_correction_serial(self):
         """
         Run serial mode probe position correction.
@@ -243,6 +277,7 @@ class PtychoNNProbePositionCorrector:
             previous_obj = current_obj
             offset_tracker.update_offset(offset)
 
+    @Benchmarker.measure_walltime
     def run_probe_position_correction_collective(self):
         """
         Run collective probe position correction.
@@ -267,6 +302,7 @@ class PtychoNNProbePositionCorrector:
             i_knn += 1
         return this_neighbors_inds
 
+    @Benchmarker.measure_walltime
     def build_linear_system_for_collective_correction(self):
         self.a_mat = []
         self.b_vec = []
@@ -356,6 +392,7 @@ class PtychoNNProbePositionCorrector:
             self.a_mat = np.concatenate([self.a_mat, a_appendix], axis=0)
             self.b_vec = np.concatenate([self.b_vec, b_appendix], axis=0)
 
+    @Benchmarker.measure_walltime
     def solve_linear_system(self, mode='residue', smooth_constraint_weight=1e-3):
         a_mat = self.a_mat
         b_vec = self.b_vec
