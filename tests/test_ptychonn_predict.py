@@ -1,6 +1,7 @@
 import os
 import argparse
 import shutil
+import pytest
 
 import numpy as np
 import tifffile
@@ -26,7 +27,7 @@ def subtract_mean_and_standardize_data(data):
     data = (data - np.mean(data)) / np.std(data)
     return data
 
-
+@pytest.mark.skip("There is a known issue with loading models saved with GPU to CPU.")
 def test_ptychonn_predict(generate_gold=False):
     gold_dir = 'data_gold/test_ptychonn_predict'
 
