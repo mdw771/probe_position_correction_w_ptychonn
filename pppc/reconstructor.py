@@ -71,7 +71,7 @@ class PyTorchReconstructor(Reconstructor):
             self.model.eval()
             if not self.config_dict.cpu_only:
                 self.model = self.model.cuda()
-        except:
+        except FileNotFoundError:
             warnings.warn('I was unable to locate the model. If this is desired (e.g., you want to override the '
                           'reconstructor object with a virtual reconstructor later for simulation), ignore this '
                           'message. Otherwise, check the path provided. ')
