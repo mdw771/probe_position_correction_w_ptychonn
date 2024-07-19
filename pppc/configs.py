@@ -147,7 +147,7 @@ class RegistrationConfigDict(ConfigDict):
     hybrid_registration_tols: Any = (0.15, 0.3, 0.3)
     """Hybrid registration tolerances. This value is disregarded unless registration method is hybrid."""
 
-    nonhybrid_registration_tol: float = None
+    nonhybrid_registration_tol: float = 0.3
     """Error tolerance for non-hybrid registration. This value is disregarded if registration method is hybrid."""
 
     registration_tol_schedule: Any = None
