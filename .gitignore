@@ -6,10 +6,8 @@
 **/*.npz
 **/*.tiff
 **/*.tif
-**/*.pth
 **/*.nc
 **/*.hdf5
 **/*.h5
 **/data
 **/outputs
-**/trained_models
