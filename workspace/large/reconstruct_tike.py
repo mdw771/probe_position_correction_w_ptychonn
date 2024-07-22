@@ -318,7 +318,7 @@ class TikeReconstruction:
             self.rms_ppe_n_history = []
             probe_pos_list_true = self.get_true_positions()
             for i_epoch, this_pos_list in enumerate(self.probe_pos_history):
-                self.rms_ppe_n_history.append(calculate_rms_ppe_n(this_pos_list, probe_pos_list_true), n=n)
+                self.rms_ppe_n_history.append(calculate_rms_ppe_n(this_pos_list, probe_pos_list_true, n=n))
             if self.save_figs:
                 type_name = self.output_type_name_mapping[self.type]
                 np.savetxt(os.path.join('outputs/test{}/rms_ppe_n_history_{}_{}.txt'.format(

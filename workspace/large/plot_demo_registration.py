@@ -94,10 +94,10 @@ offsets = convert_ab_to_offset_matrix(corrector.a_mat, corrector.b_vec)
 offsets_true = probe_pos_list_true - probe_pos_list_true.reshape(-1, 1, 2)
 
 fig, ax = plt.subplots(2, 2, figsize=(5.7, 6))
-ax[0, 0].imshow(np.linalg.norm(offsets_true, axis=2), vmin=0, vmax=40)
+ax[0, 0].imshow(np.linalg.norm(offsets_true, axis=2), vmin=0, vmax=50)
 ax[0, 0].set_title('Magnitude, true')
 ax[0, 0].set_xticks([0, 2, 4, 6, 8])
-im = ax[0, 1].imshow(np.linalg.norm(offsets, axis=2), vmin=0, vmax=40)
+im = ax[0, 1].imshow(np.linalg.norm(offsets, axis=2), vmin=0, vmax=50)
 ax[0, 1].set_title('Magnitude, registered')
 ax[0, 1].set_xticks([0, 2, 4, 6, 8])
 cb_ax = fig.add_axes([0.98, 0.55, 0.04, 0.415])
@@ -109,7 +109,7 @@ im = ax[1, 1].imshow(np.rad2deg(np.arctan2(offsets[:, :, 0], offsets[:, :, 1])),
 ax[1, 1].set_title('Direction, registered')
 ax[1, 1].set_xticks([0, 2, 4, 6, 8])
 cb_ax = fig.add_axes([0.98, 0.05, 0.04, 0.415])
-plt.colorbar(im, cax=cb_ax)
+plt.colorbar(im, cax=cb_ax, ticks=[-180, -90, 0, 90, 180])
 
 plt.tight_layout()
 
